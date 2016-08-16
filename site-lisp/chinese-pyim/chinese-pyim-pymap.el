@@ -1,37 +1,47 @@
 ;;; chinese-pyim-pymap.el --- Pinyin map used by chinese-pyim
 
-;;; Header:
-;;
+;; * Header
+
 ;; The content of this file is generated from "pinyin.map" which is
 ;; included in a free package called CCE.  It is available at:
-;;
-;;	http://ftp.debian.org/debian/dists/potato/main
-;;		/source/utils/cce_0.36.orig.tar.gz
-;;
+
+;;      http://ftp.debian.org/debian/dists/potato/main
+;;          /source/utils/cce_0.36.orig.tar.gz
+
 ;; This package contains the following copyright notice.
-;;
-;;
-;;             Copyright (C) 1999, Rui He, herui@cs.duke.edu
-;;
-;;
-;;                  CCE(Console Chinese Environment) 0.32
-;;
+
+;;         Copyright (C) 1999, Rui He, herui@cs.duke.edu
+
+;;             CCE(Console Chinese Environment) 0.32
+
 ;; CCE is free software; you can redistribute it and/or modify it under the
 ;; terms of the GNU General Public License as published by the Free Software
 ;; Foundation; either version 1, or (at your option) any later version.
-;;
+
+
 ;; CCE is distributed in the hope that it will be useful, but WITHOUT ANY
 ;; WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 ;; FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
 ;; details.
-;;
+
+
 ;; You should have received a copy of the GNU General Public License along with
 ;; CCE.  If not, see <http://www.gnu.org/licenses/>.
-;;------------------------------------------------------
+
+;; ------------------------------------------------------
 
 ;;; Commentary:
 
+;; * 说明文档                                                              :doc:
+;; 这个文件包含了与 quail/PY.el 文件内容相似的 "拼音-汉字" 对照表，
+;; 这个对照表用来实现拼音查询功能，即，查询某个汉字对应的拼音代码。
+
+;; 注意： 这个文件 *不用于* 输入法自定义词库！！！
+
+
 ;;; Code:
+
+;; * 代码                                                                 :code:
 ;; #+BEGIN_SRC emacs-lisp
 (defvar pyim-pinyin-pymap
   '(("a" "阿啊呵腌嗄锕吖")
@@ -440,17 +450,106 @@
     ("zui" "最罪嘴醉咀觜蕞")
     ("zun" "尊遵樽鳟撙")
     ("zuo" "作做坐座左昨琢佐凿撮柞嘬怍胙唑笮阼祚酢")))
+
+(defvar pyim-pinyin2cchar-cache1 nil)
+(defvar pyim-pinyin2cchar-cache2 nil)
+(defvar pyim-pinyin2cchar-cache3 nil)
+(defvar pyim-cchar2pinyin-cache nil)
+
+(defun pyim-pinyin2cchar-cache-create (&optional force)
+  "构建 pinyin 到 chinese char 的缓存，用于加快搜索速度，这个函数
+将缓存保存到 `pyim-pinyin2cchar-cache' 变量中，
+如果 force 设置为 t, 强制更新索引。"
+  (when (or force (or (not pyim-pinyin2cchar-cache1)
+                      (not pyim-pinyin2cchar-cache2)))
+    (setq pyim-pinyin2cchar-cache1
+          (make-hash-table :size 50000 :test #'equal))
+    (setq pyim-pinyin2cchar-cache2
+          (make-hash-table :size 50000 :test #'equal))
+    (setq pyim-pinyin2cchar-cache3
+          (make-hash-table :size 50000 :test #'equal))
+    (dolist (x pyim-pinyin-pymap)
+      (let* ((py (car x))
+             (cchars (cdr x))
+             (n (min (length py) 7)))
+        (puthash py cchars pyim-pinyin2cchar-cache1)
+        (puthash py (cdr (split-string (car cchars) ""))
+                 pyim-pinyin2cchar-cache2)
+        (dotimes (i n)
+          (let* ((key (substring py 0 (+ i 1)))
+                 (orig-value (gethash key pyim-pinyin2cchar-cache3)))
+            (puthash key (delete-dups `(,@orig-value ,@cchars))
+                     pyim-pinyin2cchar-cache3)))))))
+
+(defun pyim-pinyin2cchar-get (pinyin &optional equal-match return-list)
+  "获取拼音与 `pinyin' 想匹配的所有汉字，比如：
+
+“man” -> (\"忙茫盲芒氓莽蟒邙漭硭\" \"满慢漫曼蛮馒瞒蔓颟谩墁幔螨鞔鳗缦熳镘\")"
+  (pyim-pinyin2cchar-cache-create)
+  (when (and pinyin (stringp pinyin))
+    (if equal-match
+        (if return-list
+            (gethash pinyin pyim-pinyin2cchar-cache2)
+          (gethash pinyin pyim-pinyin2cchar-cache1))
+      (gethash pinyin pyim-pinyin2cchar-cache3))))
+
 ;; #+END_SRC
 
-;;; Footer:
+;; ** 查询某个汉字的拼音
+;;   :PROPERTIES:
+;;   :CUSTOM_ID: make-char-table
+;;   :END:
+;; Chinese-pyim 在特定的时候需要读取一个汉字的拼音，这个工作由下面函数完成：
+
+;; 函数 `pyim-cchar2pinyin-get' 从 `pyim-cchar2pinyin-cache' 查询得到一个汉字字符的拼音， 例如：
+;; #+BEGIN_EXAMPLE
+;; (pyim-cchar2pinyin-get ?我)
+;; #+END_EXAMPLE
+
+;; 结果为:
+;; : ("wo")
+
+;; 我们用全局变量 `pyim-cchar2pinyin-cache' 来保存这个 *hash table* 。
+
+;; 这个例子中的语句用于调试上述三个函数。
+;; #+BEGIN_EXAMPLE
+;; (setq pyim-cchar2pinyin-cache nil)
+;; (pyim-cchar2pinyin-create-cache)
+;; (pyim-cchar2pinyin-get ?你)
+;; (pyim-cchar2pinyin-get "你")
+;; #+END_EXAMPLE
+
+
+;; #+BEGIN_SRC emacs-lisp
+(defun pyim-cchar2pinyin-get (char-or-str)
+  "Get the code of the character CHAR"
+  (pyim-cchar2pinyin-cache-create)
+  (let ((key (if (characterp char-or-str)
+                 (char-to-string char-or-str)
+               char-or-str)))
+    (when (= (length key) 1)
+      (gethash key pyim-cchar2pinyin-cache))))
+
+(defun pyim-cchar2pinyin-cache-create (&optional force)
+  "Build pinyin cchar to pinyin hashtable from `pyim-pinyin-pymap'
+in package `chinese-pyim-pymap'"
+  (when (or force (not pyim-cchar2pinyin-cache))
+    (setq pyim-cchar2pinyin-cache
+          (make-hash-table :size 50000 :test #'equal))
+    (dolist (x pyim-pinyin-pymap)
+      (let ((py (car x))
+            (cchar-list (string-to-list (car (cdr x)))))
+        (dolist (cchar cchar-list)
+          (let* ((key (char-to-string cchar))
+                 (cache (gethash key pyim-cchar2pinyin-cache)))
+            (if cache
+                (puthash key (append (list py) cache) pyim-cchar2pinyin-cache)
+              (puthash key (list py) pyim-cchar2pinyin-cache))))))))
+;; #+END_SRC
+
+;; * Footer
 ;; #+BEGIN_SRC emacs-lisp
 (provide 'chinese-pyim-pymap)
-;; Local Variables:
-;; coding: utf-8-unix
-;; tab-width: 4
-;; indent-tabs-mode: nil
-;; lentic-init: lentic-orgel-org-init
-;; End:
 
 ;;; chinese-pyim-pymap.el ends here
 ;; #+END_SRC

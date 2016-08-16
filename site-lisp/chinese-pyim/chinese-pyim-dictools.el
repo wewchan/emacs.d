@@ -1,6 +1,6 @@
 ;;; chinese-pyim-dictools.el --- Tools for Chinese-pyim pinyin dict
 
-;;; Header:
+;; * Header
 ;; Copyright 2015 Feng Shu
 
 ;; Author: Feng Shu <tumashu@163.com>
@@ -23,13 +23,25 @@
 ;; Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 
 ;;; Commentary:
-;; 这个文件包含了制作，分发以及管理 Chinese-pyim 词库文件需要的工具
+
+;; * 说明文档                                                              :doc:
+;; 这个文件主要包含与词库文件管理相关的一些命令和函数，比如：
+;; 1. 词库管理器
+;; 2. 词库文件制作
+;; 3. 词库文件更新
+;; 4. 汉字转拼音
+;; 5. 其它
+
 
 ;;; Code:
+
+;; * 代码                                                                 :code:
 ;; ** Require
+;; #+BEGIN_SRC emacs-lisp
 (require 'cl-lib)
 (require 'chinese-pyim-pymap)
 (require 'chinese-pyim-core)
+;; #+END_SRC
 
 ;; ** 汉字到拼音的转换工具
 ;; `pyim-hanzi2pinyin' 和 `pyim-hanzi2pinyin-simple' 可以将一个中文字符串转换为拼音字符串
@@ -61,71 +73,157 @@
 ;; #+RESULTS:
 ;; : ("hangchang" "hc" "hang-chang" ("hang-chang") ("h-c"))
 
+
+;; `pyim-hanzi2pinyin' 函数使用 “排列组合” 函数 `pyim-permutate-list' 来处理多音字，
+;; 这个函数所做工作类似：
+
+;; #+BEGIN_EXAMPLE
+;; (cl-prettyprint
+;;  (pyim-permutate-list
+;;   '(("a" "b")
+;;     ("c" "d")
+;;     ("e" "f" "g"))))
+
+;; OUTPUT:
+
+;; (("a" "c" "e")
+;;  ("a" "c" "f")
+;;  ("a" "c" "g")
+;;  ("a" "d" "e")
+;;  ("a" "d" "f")
+;;  ("a" "d" "g")
+;;  ("b" "c" "e")
+;;  ("b" "c" "f")
+;;  ("b" "c" "g")
+;;  ("b" "d" "e")
+;;  ("b" "d" "f")
+;;  ("b" "d" "g"))
+;; #+END_EXAMPLE
+
+
 ;; #+BEGIN_SRC emacs-lisp
 ;;;###autoload
-(defun pyim-hanzi2pinyin (string &optional shou-zi-mu separator return-list ignore-duo-yin-zi)
+(defun pyim-hanzi2pinyin (string &optional shou-zi-mu separator
+                                 return-list ignore-duo-yin-zi adjuct-duo-yin-zi)
   "将汉字字符串转换为对应的拼音字符串, 如果 `shou-zi-mu' 设置为t,转换仅得到拼音
-首字母字符串。如果 `ignore-duo-yin-zi' 设置为t, 遇到多音字时，只使用第一个拼音。
-其它拼音忽略。"
-  (let (string-list pinyin-list output)
+首字母字符串。当 `return-list' 设置为 t 时，返回一个拼音列表，这个列表包含词条的一个
+或者多个拼音（词条包含多音字时）；如果 `ignore-duo-yin-zi' 设置为t, 遇到多音字时，
+只使用第一个拼音，其它拼音忽略；当 `adjuct-duo-yin-zi' 设置为t时，pyim-hanzi2pinyin
+会使用 Chinese-pyim 已安装的词库来校正多音字，但这个功能有一定的限制:
 
-    ;; 确保 `pyim-char-table' 已经生成。
-    (unless (pyim-get-char-code ?文)
-      (pyim-make-char-table))
+1. Chinese-pyim 普通词库中不存在的词条不能较正
+2. 多音字校正速度比较慢，实时转换会产生卡顿。
 
-    ;; 将汉字字符串转换为字符list，英文原样输出。
-    (setq string-list (split-string
-                       (replace-regexp-in-string
-                        "\\(\\cc\\)" "-\\1-" string)
-                       "-"))
-    ;; 删除空字符串
-    (setq string-list (cl-remove-if #'(lambda (x)
-                                        (= (length x) 0)) string-list))
+BUG: 当 `string' 中包含其它标点符号，并且设置 `separator' 时，结果会包含多余的连接符：
+比如： '你=好' --> 'ni-=-hao'"
+  (if (not (pyim-string-match-p "\\cc" string))
+      string
+    (let (string-list pinyins-list pinyins-list-permutated pinyins-list-adjusted)
 
-    ;; 将上述汉字字符串里面的所有汉字转换为与之对应的拼音list。
-    (setq pinyin-list (mapcar (lambda (str)
-                                (cond
-                                 ((> (length str) 1) (list str))
-                                 ((and (> (length str) 0)
-                                       (string-match-p "\\cc" str))
-                                  (or (pyim-get-char-code (string-to-char str)) (list str)))
-                                 ((> (length str) 0) (list str)))) string-list))
+      ;; 将汉字字符串转换为字符list，英文原样输出。
+      ;; 比如： “Hello银行” -> ("Hello" "银" "行")
+      (setq string-list
+            (if (pyim-string-match-p "\\CC" string)
+                ;; 处理中英文混合的情况
+                (split-string
+                 (replace-regexp-in-string
+                  "\\(\\cc\\)" "@@@@\\1@@@@" string)
+                 "@@@@")
+              ;; 如果词条只包含中文，使用`string-to-vector'
+              ;; 这样处理速度比较快。
+              (string-to-vector string)))
 
-    ;; 通过排列组合的方式将 pinyin-list 转化为拼音字符串列表。
-    (setq output
-          (if ignore-duo-yin-zi
-              (list (mapconcat 'identity
-                               (mapcar
-                                (lambda (x)
-                                  (if shou-zi-mu
-                                      (substring (car x) 0 1)
-                                    (car x))) pinyin-list)
-                               (or separator "")))
-            (cl-remove-duplicates
-             (let ((result '("")))
-               (cl-loop for i in pinyin-list
-                        do (setq result
-                                 (cl-loop for j in i
-                                          append (cl-loop for k in result
-                                                          collect (concat k (if shou-zi-mu (substring j 0 1) j)
-                                                                          (or separator "")))))) result)
-             :test (lambda (x y) (or (null y) (equal x y)))
-             :from-end t)))
+      ;; 将上述汉字字符串里面的所有汉字转换为与之对应的拼音list。
+      ;; 比如： ("Hello" "银" "行") -> (("Hello") ("yin") ("hang" "xing"))
+      (mapc
+       #'(lambda (str)
+           ;; `string-to-vector' 得到的是 char vector, 需要将其转换为 string。
+           (when (numberp str)
+             (setq str (char-to-string str)))
+           (cond
+            ((> (length str) 1)
+             (push (list str) pinyins-list))
+            ((and (> (length str) 0)
+                  (pyim-string-match-p "\\cc" str))
+             (push (or (pyim-cchar2pinyin-get (string-to-char str))
+                       (list str))
+                   pinyins-list))
+            ((> (length str) 0)
+             (push (list str) pinyins-list))))
+       string-list)
+      (setq pinyins-list (nreverse pinyins-list))
 
-    ;; 清理多余的拼音连接符，这个处理方式有点hack。需要优化。
-    (setq output (mapcar (lambda (x)
-                           (replace-regexp-in-string
-                            "- " " " x)) output))
-    (setq output (mapcar (lambda (x)
-                           (replace-regexp-in-string
-                            "-$" "" x)) output))
-    (setq output (mapcar (lambda (x)
-                           (replace-regexp-in-string
-                            " -" " " x)) output))
-    ;; 返回字符串或者列表
-    (if return-list
-        output
-      (mapconcat 'identity output " "))))
+      ;; 通过排列组合的方式, 重排 pinyins-list。
+      ;; 比如：(("Hello") ("yin") ("hang" "xing")) -> (("Hello" "yin" "hang") ("Hello" "yin" "xing"))
+      (setq pinyins-list-permutated (pyim-permutate-list2 pinyins-list))
+
+      ;; 使用 Chinese-pyim 的安装的词库来校正多音字。
+      (when adjuct-duo-yin-zi
+        (unless pyim-buffer-list ;确保 pyim-get 可以正常运行
+          (setq pyim-buffer-list (pyim-load-file)))
+        (dolist (pinyin-list pinyins-list-permutated)
+          (let* ((py-str (mapconcat #'identity pinyin-list "-"))
+                 (words-from-dicts
+                  ;; pyim-buffer-list 中第一个 buffer 对应的是个人词库文件
+                  ;; 个人词库文件中的词条，极有可能存在 *多音字污染*。
+                  ;; 这是由 Chinese-pyim 保存词条的机制决定的。
+                  (pyim-get py-str '(pinyin-dict))))
+            (when (member string words-from-dicts)
+              (push pinyin-list pinyins-list-adjusted))))
+        (setq pinyins-list-adjusted
+              (nreverse pinyins-list-adjusted)))
+
+      ;; 返回拼音字符串或者拼音列表
+      (let* ((pinyins-list
+              (or pinyins-list-adjusted
+                  pinyins-list-permutated))
+             (list (mapcar
+                    #'(lambda (x)
+                        (mapconcat
+                         #'(lambda (str)
+                             (if shou-zi-mu
+                                 (substring str 0 1)
+                               str))
+                         x separator))
+                    (if ignore-duo-yin-zi
+                        (list (car pinyins-list))
+                      pinyins-list))))
+        (if return-list
+            list
+          (mapconcat #'identity list " "))))))
+
+(defun pyim-permutate-list (list)
+  "使用排列组合的方式重新排列 `list'，这个函数由 ‘二中’ 提供。
+注：`pyim-hanzi2pinyin' 没有使用这个函数(速度稍微有点慢)。"
+  (let ((list-head (car list))
+        (list-tail (cdr list)))
+    (cond ((null list-tail)
+           (cl-loop for element0 in list-head
+                    append (cons (cons element0 nil) nil)))
+          (t (cl-loop for element in list-head
+                      append (mapcar (lambda (l) (cons element l))
+                                     (pyim-permutate-list list-tail)))))))
+
+(defun pyim-permutate-list2 (list)
+  "使用排列组合的方式重新排列 `list'，这个函数由 ’翀/ty‘ 提供。
+`pyim-hanzi2pinyin' 默认使用这个函数。"
+  (if (= (length list) 1)
+      (mapcar #'list (car list))
+    (pyim-permutate-list2-internal (car list) (cdr list))))
+
+(defun pyim-permutate-list2-internal (one two)
+  "`pyim-permutate-list2' 的内部函数。"
+  (let (return)
+    (if (null (car two))
+        one
+      (dolist (x1 one)
+        (dolist (x2 (car two))
+          (push (if (listp x1)
+                    (append x1 (list x2))
+                  (list x1 x2))
+                return)))
+      (setq one return)
+      (pyim-permutate-list2-internal one (cdr two)))))
 
 ;;;###autoload
 (defun pyim-hanzi2pinyin-simple (string &optional shou-zi-mu separator return-list)
@@ -135,34 +233,41 @@
 
 ;; ** 词库文件生成工具
 ;; #+BEGIN_SRC emacs-lisp
-(defun pyim-sort-and-remove-duplicates (words-list)
-  "使用分词后的文章来制作拼音词库时，首先按照词条在文章中
-出现的频率对词条排序，然后再删除重复词条。"
-  (let ((list (cl-remove-duplicates words-list :test #'equal))
-        (count-table (make-hash-table :test #'equal)))
+(defun pyim-sort-by-freq (words-list)
+  "按照词条出现频率对词条列表排序，频率高词条的排在最前面。"
+  (let ((count-table (make-hash-table :test #'equal)))
     (dolist (x words-list)
       (let ((value (gethash x count-table)))
         (if value
             (puthash x (1+ value) count-table)
           (puthash x 1 count-table))))
-    (sort list (lambda (a b) (> (gethash a count-table)
-                                (gethash b count-table))))))
+    (sort words-list (lambda (a b) (> (gethash a count-table)
+                                      (gethash b count-table))))))
 
 (defun pyim-remove-duplicates-word (&optional sort-by-freq)
   "制作拼音词库时，删除当前行重复出现的词条，
 当 `sort-by-freq' 为 t 时，首先按照当前行词条出现频率对词条排序，
 然后再删除重复词条，用于：从中文文章构建词库。"
   (interactive)
-  (let* (words-list length)
-    (setq words-list (pyim-line-content " "))
-    (setq length (length words-list))
+  (let* ((code (pyim-code-at-point))
+         (words-list (pyim-line-content " "))
+         (length (length words-list)))
+    ;; 从文章中构建词库时，首先会将词条按照出现频率
+    ;; 排序，这样频率高的词条就会排在前面。
+    (when sort-by-freq
+      (setq words-list
+            (pyim-sort-by-freq words-list)))
+
+    ;; 删除重复词条的时候，要注意删除顺序。
     (setq words-list
-          (if sort-by-freq
-              (cons (car words-list) ;; 拼音必须排在第一位
-                    (pyim-sort-and-remove-duplicates (cdr words-list)))
-            (cl-remove-duplicates words-list :test #'equal)))
+          (cl-delete-duplicates
+           words-list
+           :test #'equal :from-end t))
+
     (when (> length (length words-list))
       (pyim-delete-line)
+      (insert code)
+      (insert " ")
       (insert (mapconcat 'identity words-list " "))
       (insert "\n")
       (goto-char (line-beginning-position)))))
@@ -187,18 +292,29 @@
             first-char total-char currw)
         (goto-char (point-min))
         (perform-replace "[ \t]+$" "" nil t nil nil nil (point-min) (point-max))
-        (sort-regexp-fields nil "^.*$" "[a-z-]+[ ]+"
-                            (point-min)
-                            (point-max))
+        (pyim-sort-dict-region (point-min)
+                               (point-max))
+
+        (goto-char (point-min))
+        (while (not (eobp))
+          (let* ((words-list (pyim-line-content))
+                 (code (pyim-code-at-point))
+                 (length (length words-list)))
+            (if (or (> length 0) ;; 删除只包含 code，但没有词条的行
+                    (pyim-string-match-p " *^;+" code))
+                (forward-line 1)
+              (pyim-delete-line))))
+
         (goto-char (point-min))
         (while (not (eobp))
           (if (looking-at "^[ \t]*$")     ; 如果有空行，删除
               (pyim-delete-line)
             (setq currw (pyim-code-at-point))
-            (if (string= currw lastw)
+            (if (equal currw lastw)
                 (delete-region (1- (point)) (+ (point) (length currw))))
             (setq lastw currw)
             (forward-line 1)))
+
         (goto-char (point-min))
         (while (not (eobp))
           (pyim-remove-duplicates-word sort-by-freq)
@@ -206,24 +322,42 @@
         (if (looking-at "^$")
             (delete-char -1))))))
 
+(defun pyim-sort-dict-region (start end)
+  "将词库 buffer 中 `start' 和 `end' 范围内的词条信息按照拼音code排序
+当 unix 工具 sort 存在时，优先使用这个工具，否则使用emacs自带函数
+`sort-regexp-fields'。"
+  (if (and (eq system-type 'gnu/linux)
+           (executable-find "sort")
+           (executable-find "env"))
+      (call-process-region start end
+                           "env" t t nil "LC_ALL=C"
+                           "sort" "-k1,1" "-s")
+    (sort-regexp-fields nil "^.*$" "[a-z-]+[ ]+" start end)))
+
 (defun pyim-convert-current-line-to-dict-format ()
   "将当前行对应的汉语词条转换为 Chinese-pyim 可以识别的词库格式（ni-hao 你好）。"
   (interactive)
   (let (line-content pinyin-list insert-string)
-    (setq line-content (buffer-substring-no-properties
-                        (line-beginning-position) (line-end-position)))
-    (setq line-content (replace-regexp-in-string "^ +\\| +$" "" line-content))
-    (setq pinyin-list (pyim-hanzi2pinyin line-content nil "-" t))
+    (setq line-content
+          (buffer-substring-no-properties
+           (line-beginning-position) (line-end-position)))
+    (setq line-content
+          (replace-regexp-in-string
+           "^ +\\| +$" "" line-content))
+    (setq pinyin-list
+          (pyim-hanzi2pinyin
+           (car (split-string line-content)) nil "-" t))
     (delete-region (line-beginning-position) (line-end-position))
     (setq insert-string
           (mapconcat
-           (lambda (x)
-             ;; 拼音中不能有中文字符。
-             ;; 中文词条中必须有中文字符，并且不能有ascii字符。
-             (unless (or (string-match-p "[^a-z-]" x)
-                         (string-match-p "[:ascii:]" line-content)
-                         (not (string-match-p "\\cc" line-content)))
-               (format "%s  %s" x line-content))) pinyin-list "\n"))
+           #'(lambda (x)
+               ;; 拼音中不能有中文字符。
+               ;; 中文词条中必须有中文字符，并且不能有ascii字符。
+               (unless (or (pyim-string-match-p "[^a-z-]" x)
+                           (pyim-string-match-p "[:ascii:]" line-content)
+                           (not (pyim-string-match-p "\\cc" line-content)))
+                 (format "%s  %s" x line-content)))
+           pinyin-list "\n"))
     (when (> (length insert-string) 1)
       (insert insert-string))))
 
@@ -272,8 +406,8 @@
 其步骤为：
 1. 清除所有非汉语内容。
 2. 使用分词系统将文章分词。
-3. 将词条与词条之间用换行符分开。
-4. 为每一行的词条添加拼音。"
+3. 将词条与词条之间用换行符分开（对于普通词库）。
+4. 为每一行的词条添加拼音（对于普通词库）。"
   (save-excursion
     (pyim-show-help
      "将一篇中文文章转换为 Chinese-pyim 可以识别的拼音词库。
@@ -282,7 +416,8 @@
    1. 安装教程请参考： https://github.com/fxsjy/jieba
    2. 使用命令： python -m jieba -d \" \" 源文件.txt  > 目标文件.txt
    3. 命令帮助： python -m jieba --help
-3. 添加拼音：使用 emacs 打开 “目标文件.txt”，然后按照用户需求运行下面3个命令：
+   注意：如果词条已经使用 *空格* 或者 *换行符* 隔开，可以跳过 “分词处理” 这一步。
+3. 添加拼音：运行下面4个命令
    1. `pyim-article2dict-chars'
    2. `pyim-article2dict-words'
    3. `pyim-article2dict-misspell-words'
@@ -395,26 +530,32 @@
   (with-current-buffer pyim-dicts-manager-buffer-name
     (let ((inhibit-read-only t)
           (dicts-list pyim-dicts)
-          (format-string "%-4s %-4s %-11s %-25s %-60s\n")
+          (format-string "%-4s %-4s %-11s %-25s %-60s %-4s\n")
           (face-attr '((foreground-color . "DarkOrange2")
                        (bold . t)))
           (i 1))
       (erase-buffer)
-      (insert (propertize (format format-string "序号" "启用" "Coding"    "词库名称" "词库文件")
+      (insert (propertize (format format-string "序号" "启用" "Coding"    "词库名称" "词库文件" "词库类型")
                           'face face-attr))
       (insert (propertize (format format-string
                                   "----" "----" "----------"
                                   "---------------"
-                                  "------------------------------\n")
+                                  "------------------------------------------"
+                                  "--------------\n")
                           'face face-attr))
       (if (not pyim-dicts)
           (insert "拼音词库是 Chinese-pyim 使用顺手与否的关键。根据经验估计：
 
 1. 当词库词条超过100万时 (词库文件>20M)，Chinese-pyim 选词频率大大降低。
-2. 当词库词条超过100万时，Chinese-pyim 中文输入体验可以达到搜狗输入法的80%。
+2. 当词库词条超过100万时，Chinese-pyim 中文输入体验可以达到搜狗输入法的 80%。
 
-想快速体验 Chinese-pyim 输入法的用户可以使用词库导入命令下载安装样例词库
-或者导入搜狗输入法词库。
+想快速体验 Chinese-pyim 输入法的用户, 可以使用 chinese-pyim-basedict：
+
+     (require 'chinese-pyim-basedict)
+     (chinese-pyim-basedict-enable)
+
+如果用户的计算机性能比较好，建议从 Melpa 安装 chinese-pyim-greatdict 包,
+这个词库包有 300 多万词条，是一个 *大而全* 的词库。
 
 喜欢折腾的用户可以从下面几个途径获得 Chinese-pyim 更详细的信息。
 1. 使用 `C-h v pyim-dicts' 了解 `Chinese-pyim' 词库文件格式。
@@ -426,15 +567,17 @@
           (let ((disable (plist-get dict :disable))
                 (name (plist-get dict :name))
                 (file (plist-get dict :file))
-                (coding (plist-get dict :coding)))
+                (coding (plist-get dict :coding))
+                (dict-type (plist-get dict :dict-type)))
             (insert (propertize (format format-string i
                                         (if disable "no" "yes")
-                                        coding name file)
-                                'id i 'disable disable 'name name 'file file 'coding coding)))
+                                        coding name file dict-type)
+                                'id i 'disable disable 'name name 'file file 'coding coding dict-type 'dict-type)))
           (setq i (1+ i))))
       (insert (propertize "
 操作命令：[A] 添加词库  [D] 删除词库   [P] 向上移动   [N] 向下移动  [g] 刷新页面
           [s] 保存配置  [R] 重启输入法 [C-c C-c] 禁用/启用当前词库
+          [M] 将所有的词库文件合并为一个词库文件
 
 词库导入：[i e] 下载并安装样例词库(用于测试)
           [i f] 导入一个搜狗输入法词库
@@ -444,7 +587,7 @@
 (defun pyim-dicts-manager-toggle-enable-dict (&optional enable)
   "启用当前行对应的词库。"
   (interactive)
-  (when (string= (buffer-name) pyim-dicts-manager-buffer-name)
+  (when (equal (buffer-name) pyim-dicts-manager-buffer-name)
     (let* ((id (get-text-property (point) 'id))
            (disable (get-text-property (point) 'disable))
            (dict (cl-copy-list (nth (1- id) pyim-dicts)))
@@ -461,7 +604,7 @@
 (defun pyim-dicts-manager-delete-dict ()
   "从 `pyim-dicts' 中删除当前行对应的词库信息。"
   (interactive)
-  (when (string= (buffer-name) pyim-dicts-manager-buffer-name)
+  (when (equal (buffer-name) pyim-dicts-manager-buffer-name)
     (let ((id (get-text-property (point) 'id))
           (file (get-text-property (point) 'file))
           (line (line-number-at-pos)))
@@ -477,7 +620,7 @@
 (defun pyim-dicts-manager-dict-position-up ()
   "向上移动词库。"
   (interactive)
-  (when (string= (buffer-name) pyim-dicts-manager-buffer-name)
+  (when (equal (buffer-name) pyim-dicts-manager-buffer-name)
     (let* ((id (get-text-property (point) 'id))
            (dict1 (nth (- id 1) pyim-dicts))
            (dict2 (nth (- id 2) pyim-dicts))
@@ -493,7 +636,7 @@
 (defun pyim-dicts-manager-dict-position-down ()
   "向下移动词库。"
   (interactive)
-  (when (string= (buffer-name) pyim-dicts-manager-buffer-name)
+  (when (equal (buffer-name) pyim-dicts-manager-buffer-name)
     (let* ((id (get-text-property (point) 'id))
            (dict1 (nth (- id 1) pyim-dicts))
            (dict2 (nth id pyim-dicts))
@@ -516,7 +659,7 @@
 (defun pyim-dicts-manager-import-sogou-dict-directory ()
   "导入某个目录中所有搜狗细胞词库的命令。"
   (interactive)
-  (when (string= (buffer-name) pyim-dicts-manager-buffer-name)
+  (when (equal (buffer-name) pyim-dicts-manager-buffer-name)
     (let* ((line (line-number-at-pos))
            (dir (read-directory-name "请选择搜狗细胞词库所在的目录： " "~/"))
            (files (directory-files dir t ".*\\.scel")))
@@ -529,7 +672,7 @@
 (defun pyim-dicts-manager-import-sogou-dict-file ()
   "导入搜狗细胞词库文件的命令"
   (interactive)
-  (when (string= (buffer-name) pyim-dicts-manager-buffer-name)
+  (when (equal (buffer-name) pyim-dicts-manager-buffer-name)
     (let ((line (line-number-at-pos))
           (file (read-file-name "请选择需要导入的搜狗细胞词库文件： " "~/")))
       (pyim-dicts-manager-import-sogou-dict-file-1 file)
@@ -549,23 +692,26 @@
                                nil "*pyim-dicts-import*" nil input-file output-file)
                  (file-exists-p output-file))
             (add-to-list 'pyim-dicts
-                         `(:name ,input-filename :file ,output-file :coding utf-8) t)
+                         `(:name ,input-filename :file ,output-file :coding utf-8 :dict-type pinyin-dict) t)
           (message "搜狗词库文件：%s 转换失败。" input-file))
       (message "这个词库文件似乎已经导入。"))))
 
 (defun pyim-dicts-manager-add-dict ()
   "为 `pyim-dicts' 添加词库信息。"
   (interactive)
-  (when (string= (buffer-name) pyim-dicts-manager-buffer-name)
+  (when (equal (buffer-name) pyim-dicts-manager-buffer-name)
     (let ((line (line-number-at-pos))
-          dict name file coding first-used)
+          dict name file coding first-used dict-type)
       (setq name (read-from-minibuffer "请输入词库名称： "))
       (setq file (read-file-name "请选择词库文件： " "~/"))
       (setq coding (completing-read "词库文件编码: "
                                     '("utf-8-unix" "cjk-dos" "gb18030-dos")
                                     nil t nil nil "utf-8-unix"))
       (setq first-used  (yes-or-no-p "是否让 Chinese-pyim 优先使用词库？ "))
-      (setq dict `(:name ,name :file ,file :coding ,(intern coding)))
+      (setq dict `(:name ,name
+                         :file ,file
+                         :coding ,(intern coding)
+                         :dict-type pinyin-dict))
       (if first-used
           (add-to-list 'pyim-dicts dict)
         (add-to-list 'pyim-dicts dict t))
@@ -576,13 +722,13 @@
 (defun pyim-dicts-manager-add-example-dict ()
   "下载并安装用于测试目的的样例词库。"
   (interactive)
-  (when (string= (buffer-name) pyim-dicts-manager-buffer-name)
+  (when (equal (buffer-name) pyim-dicts-manager-buffer-name)
     (let ((dict-name "BigDict-01")
-          (dict-url "http://tumashu.github.io/chinese-pyim-bigdict/pyim-bigdict.pyim")
+          (dict-url "http://tumashu.github.io/chinese-pyim-bigdict/pyim-bigdict.pyim.gz")
           (dict-file (expand-file-name
                       (concat (file-name-as-directory
                                pyim-dicts-directory)
-                              "pyim-bigdict.pyim"))))
+                              "pyim-bigdict.pyim.gz"))))
       (when (yes-or-no-p (format "从网址 (%s) 下载安装样例词库？ " dict-url))
         (unless (file-exists-p dict-file)
           (url-copy-file dict-url dict-file))
@@ -591,8 +737,58 @@
           (add-to-list 'pyim-dicts
                        `(:name ,dict-name
                                :file ,dict-file
-                               :coding utf-8-unix) t))
+                               :coding utf-8-unix
+                               :dict-type pinyin-dict) t))
         (pyim-dicts-manager-refresh)))))
+
+(defun pyim-dicts-manager-merge-all ()
+  "将词库管理器中所有词库合并，并添加生成的词库文件。
+词库合并可以优化 Chinese-pyim 的速度。"
+  (interactive)
+  (let ((dicts-list pyim-dicts)
+        (dict-name "Dicts-Merged")
+        (buffer (get-buffer-create "*pyim-merged-dict*"))
+        (dict-file (expand-file-name
+                    (concat (file-name-as-directory
+                             pyim-dicts-directory)
+                            "pyim-dicts-merged.pyim")))
+        file coding disable dict-type)
+    (when (and dicts-list (yes-or-no-p "确定将所有词库合并为一个词库吗? "))
+      (dolist (dict dicts-list)
+        (setq file (expand-file-name (plist-get dict :file)))
+        (setq coding (plist-get dict :coding))
+        (setq disable (plist-get dict :disable))
+        (setq dict-type (plist-get dict :dict-type))
+        (if (and (not disable)
+                 (eq dict-type 'dict)
+                 (file-exists-p file))
+            (with-current-buffer buffer
+              (if coding
+                  (let ((coding-system-for-read coding))
+                    (insert-file-contents file))
+                (insert-file-contents file))
+              (goto-char (point-max))
+              (insert "\n"))))
+
+      (with-current-buffer buffer
+        (goto-char (point-min))
+        (while (re-search-forward "^;+.*coding:.*" nil t)
+          (replace-match "" nil t))
+        (goto-char (point-min))
+        (pyim-update-dict-file t)
+        (goto-char (point-min))
+        (pyim-update-dict-file t)
+        (goto-char (point-min))
+        (insert";; -*- coding: utf-8 -*-\n")
+        (write-file dict-file)
+        (kill-buffer))
+
+      (setq pyim-dicts
+            `((:name ,dict-name
+                     :file ,dict-file
+                     :coding utf-8-unix
+                     :dict-type dict)))
+      (pyim-dicts-manager-refresh))))
 
 (define-derived-mode pyim-dicts-manager-mode special-mode "pyim-dicts-manager"
   "Major mode for managing Chinese-pyim dicts"
@@ -607,7 +803,8 @@
   (define-key pyim-dicts-manager-mode-map (kbd "P") 'pyim-dicts-manager-dict-position-up)
   (define-key pyim-dicts-manager-mode-map (kbd "s") 'pyim-dicts-manager-save-dict-info)
   (define-key pyim-dicts-manager-mode-map (kbd "C-c C-c") 'pyim-dicts-manager-toggle-enable-dict)
-  (define-key pyim-dicts-manager-mode-map (kbd "R") 'pyim-restart))
+  (define-key pyim-dicts-manager-mode-map (kbd "R") 'pyim-restart)
+  (define-key pyim-dicts-manager-mode-map (kbd "M") 'pyim-dicts-manager-merge-all))
 
 ;;;###autoload
 (defun pyim-dicts-manager ()
@@ -620,6 +817,81 @@
     (switch-to-buffer buffer)
     (pyim-dicts-manager-mode)
     (setq truncate-lines t)))
+
+(defun pyim-extra-dicts-add-dict (new-dict)
+  "添加 `new-dict' 到 `pyim-dicts', 其中 `new-dict' 的格式为：
+
+   (:name \"XXX\" :file \"/path/to/XXX.pyim\"
+    :coding utf-8-unix :dict-type pinyin-dict)
+
+这个函数用于制作 elpa 格式的词库 ，不建议普通用户使用。"
+  (let (replace result)
+    (dolist (dict pyim-extra-dicts)
+      (if (equal (plist-get dict :name)
+                 (plist-get new-dict :name))
+          (progn (push new-dict result)
+                 (setq replace t))
+        (push dict result)))
+    (setq result (reverse result))
+    (setq pyim-extra-dicts
+          (if replace result `(,@result ,new-dict)))
+    (message "Add Chinese-pyim dict %S to `pyim-extra-dicts'。" (plist-get new-dict :name))
+    t))
+
+(defun pyim-contribute-words ()
+  (interactive)
+  (if (not (pyim-get-buffer 'property-file))
+      (message "请启动 Chinese-pyim 后再运行 `pyim-contribute-words' 命令。")
+    (when (yes-or-no-p "您你打算为 Chinese-pyim 贡献词条吗？ ")
+      (let* ((cache (buffer-local-value
+                     'pyim-dict-cache
+                     (get-buffer (pyim-get-buffer 'property-file))))
+             (author (read-from-minibuffer "请输入您的名字： " user-full-name))
+             (email (read-from-minibuffer "请输入您的电子邮件： " user-mail-address))
+             (license (read-from-minibuffer "请输入提交词库使用的 license ：" "GPLv2"))
+             (buffer (get-buffer-create "*pyim-contribute-words*"))
+             (dicts-string (with-temp-buffer
+                             (goto-char (point-min))
+                             (maphash
+                              #'(lambda (key value)
+                                  (insert key "\n"))
+                              cache)
+                             (goto-char (point-min))
+                             (while (not (eobp))
+                               (pyim-convert-current-line-to-dict-format)
+                               (forward-line 1))
+                             (pyim-update-dict-file t t)
+                             (pyim-update-dict-file t t)
+                             (buffer-string))))
+        (with-current-buffer buffer
+          (when (featurep 'org)
+            (org-mode))
+          (setq truncate-lines t)
+          (erase-buffer)
+          (goto-char (point-min))
+          (insert
+           "
+# ---------------------------------------------------------------------------
+# 请将 buffer 的内容通过下面 *任意一个* 方式：
+#
+# 1. QQ (329985753)
+# 2. QQ群 (59134186)
+# 3. Email (tumashu@163.com)
+# 4. Github Issue (https://github.com/tumashu/chinese-pyim-basedict/issues)
+#
+# 发送给 Chinese-pyim 的维护者：Feng Shu
+# ---------------------------------------------------------------------------
+
+")
+          (insert (format "#+Author: %s\n" author))
+          (insert (format "#+Email: %s\n" email))
+          (insert (format "#+License: %s\n" license))
+          (insert "\n")
+          (insert "#+BEGIN_COMMENT\n")
+          (insert dicts-string)
+          (insert "\n#+END_COMMENT")
+          (goto-char (point-min)))
+        (pop-to-buffer buffer)))))
 ;; #+END_SRC
 
 ;; ** TODO 词库 package 制作工具
@@ -632,7 +904,7 @@
   这个函数主要用于词库 package。"
   (cl-some (lambda (x)
              (let ((name (plist-get x :name)))
-               (string= name dict-name)))
+               (equal name dict-name)))
            pyim-dicts))
 
 (defun pyim-dict-file-available-p (dict-file)
@@ -640,21 +912,14 @@
   这个函数主要用于词库 package。"
   (cl-some (lambda (x)
              (let ((file (plist-get x :file)))
-               (string= (expand-file-name file)
-                        (expand-file-name dict-file))))
+               (equal (expand-file-name file)
+                      (expand-file-name dict-file))))
            pyim-dicts))
 ;; #+END_SRC
 
-;; ** Footer
+;; * Footer
 ;; #+BEGIN_SRC emacs-lisp
 (provide 'chinese-pyim-dictools)
-
-;; Local Variables:
-;; coding: utf-8-unix
-;; tab-width: 4
-;; indent-tabs-mode: nil
-;; lentic-init: lentic-orgel-org-init
-;; End:
 
 ;;; chinese-pyim-dictools.el ends here
 ;; #+END_SRC

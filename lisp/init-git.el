@@ -5,6 +5,11 @@
 ;; ;; Solution 2: if NO network mounted drive involved
 (setq vc-handled-backends '(Git SVN Hg))
 
+;; @see https://www.reddit.com/r/emacs/comments/4c0mi3/the_biggest_performance_improvement_to_emacs_ive/
+;; open files faster but you can't check if file is version
+;; controlled. other vcs functionality still works.
+(remove-hook 'find-file-hooks 'vc-find-file-hook)
+
 ;; ;; Solution 3: setup vc-handled-backends per project
 ;; (setq vc-handled-backends ())
 ;; (defun my-setup-develop-environment ()
@@ -12,7 +17,7 @@
 ;;   (cond
 ;;    ((string-match-p (file-truename "~/.emacs.d") (file-name-directory (buffer-file-name))
 ;;     (setq vc-handled-backends '(Git)))
-;;    (t (setq vc-handled-backends nil))))
+;;    (t (setq vc-handled-backends nil)))))
 ;; (add-hook 'java-mode-hook 'my-setup-develop-environment)
 ;; (add-hook 'emacs-lisp-mode-hook 'my-setup-develop-environment)
 ;; (add-hook 'org-mode-hook 'my-setup-develop-environment)
@@ -28,40 +33,57 @@
 
 (defun git-gutter-reset-to-head-parent()
   (interactive)
-  (let (parent)
+  (let (parent (filename (buffer-file-name)))
     (if (eq git-gutter:vcs-type 'svn)
         (setq parent "PREV")
-      (setq parent "HEAD^"))
+      (setq parent (if filename (concat (shell-command-to-string (concat "git --no-pager log --oneline -n1 --pretty='format:%H' " filename)) "^") "HEAD^")))
     (git-gutter:set-start-revision parent)
-    (message "git-gutter:set-start-revision parent of HEAD")
-    ))
+    (message "git-gutter:set-start-revision HEAD^")))
 
 (defun git-gutter-reset-to-default ()
   (interactive)
   (git-gutter:set-start-revision nil)
   (message "git-gutter reset"))
 
-                                        ; If you enable global minor mode
+
+;; If you enable global minor mode
 (global-git-gutter-mode t)
 
-  ;; nobody use bzr
-  ;; people are forced use subversion or hg, so they take priority
-  (custom-set-variables '(git-gutter:handled-backends '(svn hg git)))
+;; nobody use bzr
+;; people are forced use subversion or hg, so they take priority
+(custom-set-variables '(git-gutter:handled-backends '(svn hg git)))
 
-  (git-gutter:linum-setup)
+(git-gutter:linum-setup)
 
-  (global-set-key (kbd "C-x C-g") 'git-gutter:toggle)
-  (global-set-key (kbd "C-x v =") 'git-gutter:popup-hunk)
+(global-set-key (kbd "C-x C-g") 'git-gutter:toggle)
+(global-set-key (kbd "C-x v =") 'git-gutter:popup-hunk)
+;; Stage current hunk
+(global-set-key (kbd "C-x v s") 'git-gutter:stage-hunk)
+;; Revert current hunk
+(global-set-key (kbd "C-x v r") 'git-gutter:revert-hunk)
+;; }}
 
-  ;; Jump to next/previous hunk
-  (global-set-key (kbd "C-x p") 'git-gutter:previous-hunk)
-  (global-set-key (kbd "C-x n") 'git-gutter:next-hunk)
+;; {{ git-timemachine
+(defun my-git-timemachine-show-selected-revision ()
+  "Show last (current) revision of file."
+  (interactive)
+  (let (collection)
+    (setq collection
+          (mapcar (lambda (rev)
+                    ;; re-shape list for the ivy-read
+                    (cons (concat (substring (nth 0 rev) 0 7) "|" (nth 5 rev) "|" (nth 6 rev)) rev))
+                  (git-timemachine--revisions)))
+    (ivy-read "commits:"
+              collection
+              :action (lambda (rev)
+                        (git-timemachine-show-revision rev)))))
 
-  ;; Stage current hunk
-  (global-set-key (kbd "C-x v s") 'git-gutter:stage-hunk)
-
-  ;; Revert current hunk
-  (global-set-key (kbd "C-x v r") 'git-gutter:revert-hunk)
+(defun my-git-timemachine ()
+  "Open git snapshot with the selected version.  Based on ivy-mode."
+  (interactive)
+  (unless (featurep 'git-timemachine)
+    (require 'git-timemachine))
+  (git-timemachine--start #'my-git-timemachine-show-selected-revision))
 ;; }}
 
 ;;----------------------------------------------------------------------------
@@ -89,24 +111,19 @@
                      (ido-completing-read "git-svn command: " git-svn--available-commands nil t)))))
 
 (defun git-get-current-file-relative-path ()
-  (let (rlt)
-    (setq rlt
-          (replace-regexp-in-string
-           (concat "^" (file-name-as-directory default-directory))
-           ""
-           buffer-file-name))
-    ;; (message "rlt=%s" rlt)
-    rlt))
+  (replace-regexp-in-string (concat "^" (file-name-as-directory default-directory))
+                            ""
+                            buffer-file-name))
 
-(defun git-reset-current-file ()
-  "git reset file of current buffer"
+(defun git-checkout-current-file ()
+  "git checkout urrent file"
   (interactive)
-  (let ((filename))
-    (when buffer-file-name
-      (setq filename (git-get-current-file-relative-path))
-      (shell-command (concat "git reset " filename))
-      (message "DONE! git reset %s" filename)
-      )))
+  (when (and (buffer-file-name)
+             (yes-or-no-p (format "git checkout %s?"
+                                  (file-name-nondirectory (buffer-file-name)))))
+    (let* ((filename (git-get-current-file-relative-path)))
+      (shell-command (concat "git checkout " filename))
+      (message "DONE! git checkout %s" filename))))
 
 (defun git-add-current-file ()
   "git add file of current buffer"
@@ -115,42 +132,66 @@
     (when buffer-file-name
       (setq filename (git-get-current-file-relative-path))
       (shell-command (concat "git add " filename))
-      (message "DONE! git add %s" filename)
-      )))
-
-(defun git-push-remote-origin ()
-  "run `git push'"
-  (interactive)
-  (when buffer-file-name
-    (shell-command "git push")
-    (message "DONE! git push at %s" default-directory)
-    ))
-
-(defun git-add-option-update ()
-  "git add only tracked files of default directory"
-  (interactive)
-  (when buffer-file-name
-    (shell-command "git add -u")
-    (message "DONE! git add -u %s" default-directory)
-    ))
-
+      (message "DONE! git add %s" filename))))
 
 ;; {{ goto next/previous hunk
 (defun my-goto-next-hunk (arg)
   (interactive "p")
-  (forward-line)
-  (if (re-search-forward "\\(^<<<<<<<\\|^=======\\|^>>>>>>>\\)" (point-max) t)
-      (goto-char (line-beginning-position))
-    (forward-line -1)
-    (git-gutter:next-hunk arg)))
+  (if (memq major-mode '(diff-mode))
+      (diff-hunk-next)
+    (forward-line)
+    (if (re-search-forward "\\(^<<<<<<<\\|^=======\\|^>>>>>>>\\)" (point-max) t)
+        (goto-char (line-beginning-position))
+      (forward-line -1)
+      (git-gutter:next-hunk arg))))
+
+(defun my-reshape-git-gutter (gutter)
+  "Re-shape gutter for `ivy-read'."
+  (let* ((linenum-start (aref gutter 3))
+         (linenum-end (aref gutter 4))
+         (target-line "")
+         (target-linenum 1)
+         (tmp-line "")
+         (max-line-length 0))
+    (save-excursion
+      (while (<= linenum-start linenum-end)
+        (goto-line linenum-start)
+        (setq tmp-line (replace-regexp-in-string "^[ \t]*" ""
+                                                 (buffer-substring (line-beginning-position)
+                                                                   (line-end-position))))
+        (when (> (length tmp-line) max-line-length)
+          (setq target-linenum linenum-start)
+          (setq target-line tmp-line)
+          (setq max-line-length (length tmp-line)))
+
+        (setq linenum-start (1+ linenum-start))))
+    ;; build (key . linenum-start)
+    (cons (format "%s %d: %s"
+                  (if (eq 'deleted (aref gutter 1)) "-" "+")
+                  target-linenum target-line)
+          target-linenum)))
+
+(defun my-goto-git-gutter ()
+  (interactive)
+  (if git-gutter:diffinfos
+      (let* ((collection (mapcar 'my-reshape-git-gutter
+                                 git-gutter:diffinfos)))
+        (ivy-read "git-gutters:"
+                  collection
+                  :action (lambda (linenum)
+                            (goto-line linenum))))
+    (message "NO git-gutters!")))
 
 (defun my-goto-previous-hunk (arg)
   (interactive "p")
-  (forward-line -1)
-  (if (re-search-backward "\\(^>>>>>>>\\|^=======\\|^<<<<<<<\\)" (point-min) t)
-      (goto-char (line-beginning-position))
+  (if (memq major-mode '(diff-mode))
+      (diff-hunk-prev)
     (forward-line -1)
-    (git-gutter:previous-hunk arg)))
+    (if (re-search-backward "\\(^>>>>>>>\\|^=======\\|^<<<<<<<\\)" (point-min) t)
+        (goto-char (line-beginning-position))
+      (forward-line -1)
+      (git-gutter:previous-hunk arg))))
+;; }}
 
 ;; {{ git-messenger
 ;; show details to play `git blame' game
@@ -159,19 +200,13 @@
           (lambda (msg)
             ;; extract commit id and put into the kill ring
             (when (string-match "\\(commit *: *\\)\\([0-9a-z]+\\)" msg)
-              (copy-yank-str (match-string 2 msg))
-              (message "commit hash %s => clipboard & kill-ring" (match-string 2 msg))
-              )))
+              ;; get the first 7 characters as hash because that's `git log' use
+              (let ((hash (substring-no-properties (match-string 2 msg) 0 7)))
+                (copy-yank-str hash)
+                (message "commit hash %s => clipboard & kill-ring" hash)))))
 (global-set-key (kbd "C-x v p") 'git-messenger:popup-message)
 ;; }}
 
-;; ;; {{ cpputils-cmake.el ; debug only
-;; (setq cppcm-debug t)
-;; (setq cppcm-get-executable-full-path-callback
-;;           (lambda (path type tgt-name)
-;;             ;; extract commit id and put into the kill ring
-;;             (message "path=%s type=%s tgt-name=%s" path type tgt-name)))
-;; ;; }}
 
 (provide 'init-git)
 
