@@ -41,7 +41,7 @@
   (require 'init-utils)
   (require 'init-site-lisp) ;; Must come before elpa, as it may provide package.el
 
-  Windows configuration, assuming that cygwin is installed at "c:/cygwin"
+;;  Windows configuration, assuming that cygwin is installed at "c:/cygwin"
   (condition-case nil
       (when *win64*
         ;; (setq cygwin-mount-cygwin-bin-directory "c:/cygwin/bin")
@@ -82,7 +82,7 @@
   (require 'init-ditaa)
   (require 'init-org)
   (require 'init-org-mime)
-  (require 'init-ox-confluence)
+;;  (require 'init-ox-confluence)
   (require 'init-css)
   (require 'init-python-mode)
   (require 'init-haskell)
