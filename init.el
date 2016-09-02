@@ -42,17 +42,17 @@
   (require 'init-site-lisp) ;; Must come before elpa, as it may provide package.el
 
 ;;  Windows configuration, assuming that cygwin is installed at "c:/cygwin"
-  (condition-case nil
-      (when *win64*
-        ;; (setq cygwin-mount-cygwin-bin-directory "c:/cygwin/bin")
-        (setq cygwin-mount-cygwin-bin-directory "c:/cygwin64/bin")
-        (require 'setup-cygwin)
-        ;; better to set HOME env in GUI
-        ;; (setenv "HOME" "c:/cygwin/home/someuser")
-        )
-    (error
-     (message "setup-cygwin failed, continue anyway")
-     ))
+;;  (condition-case nil
+;;      (when *win64*
+;;        ;; (setq cygwin-mount-cygwin-bin-directory "c:/cygwin/bin")
+;;        (setq cygwin-mount-cygwin-bin-directory "c:/cygwin64/bin")
+;;        (require 'setup-cygwin)
+;;        ;; better to set HOME env in GUI
+;;        ;; (setenv "HOME" "c:/cygwin/home/someuser")
+;;        )
+;;    (error
+;;     (message "setup-cygwin failed, continue anyway")
+;;     ))
   
   (require 'idle-require)
   (require 'init-elpa)
