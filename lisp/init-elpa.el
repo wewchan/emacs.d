@@ -15,6 +15,7 @@ But you may use safer HTTPS instead.")
     robe
     groovy-mode
     inf-ruby
+    company ; I won't wait another 2 years for stable
     simple-httpd
     dsvn
     move-text
@@ -27,7 +28,6 @@ But you may use safer HTTPS instead.")
     creole
     web
     idomenu
-    pointback
     buffer-move
     regex-tool
     quack
@@ -148,6 +148,7 @@ ARCHIVE is the string name of the package archive.")
 ; color-theme 6.6.1 in elpa is buggy
 (require-package 'color-theme)
 (require-package 'auto-compile)
+(require-package 'smex)
 (require-package 'avy)
 (require-package 'auto-yasnippet)
 (require-package 'ace-link)
@@ -202,7 +203,6 @@ ARCHIVE is the string name of the package archive.")
 (require-package 'move-text)
 (require-package 'mwe-log-commands)
 (require-package 'page-break-lines)
-(require-package 'pointback)
 (require-package 'regex-tool)
 (require-package 'rinari)
 (require-package 'groovy-mode)
@@ -233,6 +233,7 @@ ARCHIVE is the string name of the package archive.")
 ;; js2-refactor requires js2, dash, s, multiple-cursors, yasnippet
 ;; I don't use multiple-cursors, but js2-refactor requires it
 (require-package 'multiple-cursors)
+(require-package 'ace-mc)
 (require-package 'tagedit)
 (require-package 'git-link)
 (require-package 'cliphist)

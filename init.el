@@ -81,7 +81,6 @@
   (require 'init-plantuml)
   (require 'init-ditaa)
   (require 'init-org)
-  (require 'init-org-mime)
 ;;  (require 'init-ox-confluence)
   (require 'init-css)
   (require 'init-python-mode)
@@ -102,6 +101,7 @@
   (require 'init-clipboard)
   ;; use evil mode (vi key binding)
   ;;(require 'init-evil)
+  (require 'init-multiple-cursors)
   (require 'init-sh)
   (require 'init-ctags)
   (require 'init-bbdb)
@@ -145,11 +145,6 @@
   (when (require 'time-date nil t)
     (message "Emacs startup time: %d seconds."
              (time-to-seconds (time-since emacs-load-start-time))))
-
-  ;;----------------------------------------------------------------------------
-  ;; Locales (setting them earlier in this file doesn't work in X)
-  ;;----------------------------------------------------------------------------
-  (require 'init-locales)
 
   ;; my personal setup, other major-mode specific setup need it.
   ;; It's dependent on init-site-lisp.el
