@@ -52,7 +52,8 @@ But you may use safer HTTPS instead.")
     w3m
     erlang
     workgroups2
-    company-c-headers)
+    company-c-headers
+    expand-region)
   "Don't install any Melpa packages except these packages")
 
 ;; We include the org repository for completeness, but don't use it.
