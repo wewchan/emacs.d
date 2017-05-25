@@ -1,5 +1,12 @@
 ;; -*- coding: utf-8 -*-
 ;(defvar best-gc-cons-threshold gc-cons-threshold "Best default gc threshold value. Should't be too big.")
+
+;; Added by Package.el.  This must come before configurations of
+;; installed packages.  Don't delete this line.  If you don't want it,
+;; just comment it out by adding a semicolon to the start of the line.
+;; You may delete these explanatory comments.
+(package-initialize)
+
 (defvar best-gc-cons-threshold 4000000 "Best default gc threshold value. Should't be too big.")
 ;; don't GC during startup to save time
 (setq gc-cons-threshold most-positive-fixnum)
@@ -42,17 +49,17 @@
   (require 'init-site-lisp) ;; Must come before elpa, as it may provide package.el
 
 ;;  Windows configuration, assuming that cygwin is installed at "c:/cygwin"
-;;  (condition-case nil
-;;      (when *win64*
-;;        ;; (setq cygwin-mount-cygwin-bin-directory "c:/cygwin/bin")
-;;        (setq cygwin-mount-cygwin-bin-directory "c:/cygwin64/bin")
-;;        (require 'setup-cygwin)
-;;        ;; better to set HOME env in GUI
-;;        ;; (setenv "HOME" "c:/cygwin/home/someuser")
-;;        )
-;;    (error
-;;     (message "setup-cygwin failed, continue anyway")
-;;     ))
+  (condition-case nil
+      (when *win64*
+        ;; (setq cygwin-mount-cygwin-bin-directory "c:/cygwin/bin")
+        (setq cygwin-mount-cygwin-bin-directory "c:/cygwin64/bin")
+        (require 'setup-cygwin)
+        ;; better to set HOME env in GUI
+        ;; (setenv "HOME" "c:/cygwin/home/someuser")
+        )
+    (error
+     (message "setup-cygwin failed, continue anyway")
+     ))
   
   (require 'idle-require)
   (require 'init-elpa)
