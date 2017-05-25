@@ -88,6 +88,9 @@
   (require 'init-plantuml)
   (require 'init-ditaa)
   (require 'init-org)
+;; Disable mobileOrg, it's useless to me rightnow
+;;  (require 'init-mobileorg)
+  (require 'init-go-mode)
 ;;  (require 'init-ox-confluence)
   (require 'init-css)
   (require 'init-python-mode)

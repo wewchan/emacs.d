@@ -705,7 +705,7 @@ If step is -1, go backward."
 
 ;; {{ auto-save.el
 (require 'auto-save)
-(auto-save-enable)
+;;(auto-save-enable)
 (setq auto-save-slient t)
 ;; }}
 
