@@ -260,5 +260,6 @@ ARCHIVE is the string name of the package archive.")
 ;;(require-package 'go-scratch)
 (require-package 'gotest)
 (require-package 'company-go)
+(require-package 'go-guru)
 
 (provide 'init-elpa)
