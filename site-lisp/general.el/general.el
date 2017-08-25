@@ -154,13 +154,13 @@ non-nil."
 ;; http://endlessparentheses.com/define-context-aware-keys-in-emacs.html
 (defun general--maybe-apply-predicate (predicate def)
   "Apply PREDICATE to DEF.
-If PREDICATE is nil or DEF is not a function, just return DEF."
-  (if (and predicate (functionp def))
+If PREDICATE is nil just return DEF."
+  (if predicate
       `(menu-item
         "" nil
         :filter (lambda (&optional _)
                   (when ,predicate
-                    (,def))))
+                    ',def)))
     def))
 
 (defun general--remove-keys (maps keys)
@@ -282,7 +282,9 @@ This function will execute the actions specified in an extended definition and
 apply a predicate if there is one."
   (cond ((and (listp def)
               (not (keymapp def))
-              (not (functionp def)))
+              ;; lambda
+              (not (functionp def))
+              (not (eq (car def) 'menu-item)))
          (unless (keywordp (car def))
            (setq def (cons :command def)))
          (dolist (keyword general-extended-def-keywords)
@@ -346,25 +348,10 @@ KEYMAP determines which keymap the MAPS will be defined in. When KEYMAP is
 is 'local, the MAPS will be bound only in the current buffer. MAPS is any
 number of paired keys and commands"
   (declare (indent 1))
-  (let (key func)
-    (while (setq key (pop maps))
-      (setq func (pop maps))
-      (if (eq keymap 'local)
-          (general--emacs-local-set-key key func)
-        (define-key keymap key func)))))
-
-;; can't apply evil-define-key since it is a macro
-;; either need to use eval or splice (,@) with defmacro
-;; or not make use of evil-define-key's &rest and repeatedly call it
-
-;; (defmacro general-evil-define-key (prefix-key state keymap &rest maps)
-;;   ;; needs special indent
-;;   "A wrapper."
-;;   (declare (indent 3))
-;;   (setq prefix-key (or prefix-key ""))
-;;   (setq maps (--map-when (stringp it ) (concat prefix-key it) maps))
-;;   `(eval-after-load 'evil
-;;      (evil-define-key ,state ,keymap ,@maps)))
+  (while (not (cl-endp maps))
+    (if (eq keymap 'local)
+        (general--emacs-local-set-key (pop maps) (pop maps))
+      (define-key keymap (pop maps) (pop maps)))))
 
 (defun general--evil-define-key (state keymap &rest maps)
   "A wrapper for `evil-define-key' and `evil-local-set-key'.
@@ -374,15 +361,12 @@ KEYMAP is 'local. MAPS is any number of keys and commands to bind."
   (eval-after-load 'evil
     `(let ((maps ',maps)
            (keymap ',keymap)
-           (state ',state)
-           key
-           func)
-       (while (setq key (pop maps))
-         (setq func (pop maps))
+           (state ',state))
+       (while maps
          (if (eq keymap 'local)
              ;; has no &rest
-             (evil-local-set-key state key func)
-           (evil-define-key state keymap key func))))))
+             (evil-local-set-key state (pop maps) (pop maps))
+           (evil-define-key* state keymap (pop maps) (pop maps)))))))
 
 (defun general--define-key
     (states keymap maps non-normal-maps global-maps kargs)
@@ -426,13 +410,16 @@ to bind the keys with (depending on whether STATES is non-nil)."
            (prefix general-default-prefix)
            (non-normal-prefix general-default-non-normal-prefix)
            (global-prefix general-default-global-prefix)
-           (infix)
+           infix
+           prefix-command
+           prefix-map
+           prefix-name
            (states general-default-states)
            (keymaps general-default-keymaps)
-           (predicate)
+           predicate
            ;; for extended definitions only
-           (package)
-           (major-mode)
+           package
+           major-mode
            &allow-other-keys)
   "The primary key definition function provided by general.
 
@@ -462,6 +449,13 @@ MAPS. This may be particularly useful if you are using default prefixes in a
 wrapper so that you can add to them without needing to re-specify all of them.
 If none of the other prefix arguments are specified, INFIX will have no effect.
 
+If PREFIX-COMMAND is specified, a prefix keymap/command will be created using
+`define-prefix-command' as long as the symbol specified is not already bound (to
+ensure that an existing prefix keymap is not overwritten if the
+`general-define-key' function is re-evaluated). All prefixes will then be bound
+to PREFIX-COMMAND. PREFIX-MAP and PREFIX-NAME can additionally be specified and
+are used as the last two arguments to `define-prefix-command'.
+
 Unlike with normal key definitions functions, the keymaps in KEYMAPS should be
 quoted (this makes it easy to check if there is only one keymap instead of a
 list of keymaps).
@@ -487,17 +481,39 @@ MAPS will be recorded for later use with `general-describe-keybindings'."
       (setq states (list states)))
     (unless (listp keymaps)
       (setq keymaps (list keymaps)))
+    (when (and prefix-command
+               (not (boundp prefix-command)))
+      (define-prefix-command prefix-command prefix-map prefix-name))
+    ;; TODO reduce code reduction here
     (when non-normal-prefix
       (setq non-normal-prefix-maps
             (general--apply-prefix-and-kbd
-             (general--concat t non-normal-prefix infix) maps)))
+             (general--concat t non-normal-prefix infix) maps))
+      (when prefix-command
+        (push prefix-command non-normal-prefix-maps)
+        (push (if general-implicit-kbd
+                  (kbd non-normal-prefix)
+                non-normal-prefix)
+              non-normal-prefix-maps)))
     (when global-prefix
       (setq global-prefix-maps
             (general--apply-prefix-and-kbd
-             (general--concat t global-prefix infix) maps)))
+             (general--concat t global-prefix infix) maps))
+      (when prefix-command
+        (push prefix-command global-prefix-maps)
+        (push (if general-implicit-kbd
+                  (kbd global-prefix)
+                global-prefix)
+              global-prefix-maps)))
     ;; last so not applying prefix twice
     (setq maps (general--apply-prefix-and-kbd
                 (general--concat t prefix infix) maps))
+    (when prefix-command
+      (push prefix-command maps)
+      (push (if general-implicit-kbd
+                (kbd prefix)
+              prefix)
+            maps))
     (dolist (keymap keymaps)
       (when (memq keymap '(insert emacs normal visual operator motion replace))
         (setq keymap (general--evil-keymap-for-state keymap)))
@@ -634,10 +650,14 @@ Any local keybindings will be shown first followed by global keybindings."
     (goto-char (point-min))
     (read-only-mode)))
 
-;;; Commands that Could Aid in Key Definition
+;;; Functions/Macros to Aid Key Definition
 ;; https://emacs.stackexchange.com/questions/6037/emacs-bind-key-to-prefix/13432#13432
 ;; altered to allow execution in a emacs state
 ;; and to create a named function with a docstring
+;; also properly handles more edge cases like correctly adding evil repeat info
+
+(defvar general--last-simulate nil)
+
 ;;;###autoload
 (defmacro general-simulate-keys (keys &optional emacs-state docstring name)
   "Create a function to simulate KEYS.
@@ -664,73 +684,89 @@ should not be quoted."
                             (replace-regexp-in-string " " "_" keys)
                             (when emacs-state
                               "-in-emacs-state"))))))
-    `(defun ,name
-         ()
-       ,(or docstring
-            (concat "Simulate '" keys "' in " (if emacs-state
-                                                  "emacs state."
-                                                "the current context.")))
-       (interactive)
-       (when ,emacs-state
-         ;; so don't have to redefine evil-stop-execute-in-emacs-state
-         (setq this-command #'evil-execute-in-emacs-state)
-         (let ((evil-no-display t))
-           (evil-execute-in-emacs-state)))
-       (let ((keys (kbd ,keys))
-             (command ,command))
-         (setq prefix-arg current-prefix-arg)
-         (setq unread-command-events (listify-key-sequence keys))
-         (when command
-           (let ((this-command command))
-             (call-interactively command)))))))
+    `(progn
+       (eval-after-load 'evil
+         '(evil-set-command-property #',name :repeat 'general--simulate-repeat))
+       (defun ,name
+           ()
+         ,(or docstring
+              (concat "Simulate '" keys "' in " (if emacs-state
+                                                    "emacs state."
+                                                  "the current context.")))
+         (interactive)
+         (when ,emacs-state
+           ;; so don't have to redefine evil-stop-execute-in-emacs-state
+           (setq this-command #'evil-execute-in-emacs-state)
+           (let ((evil-no-display t))
+             (evil-execute-in-emacs-state)))
+         (let ((command ,command)
+               (invoked-keys (this-command-keys))
+               (keys (kbd ,keys)))
+           (setq prefix-arg current-prefix-arg)
+           (setq unread-command-events
+                 (mapcar (lambda (ev) (cons t ev))
+                         (listify-key-sequence keys)))
+           (when command
+             (let ((this-command command))
+               (call-interactively command)))
+           (setq general--last-simulate `(:command ,(or command ',name)
+                                          :invoked-keys ,invoked-keys
+                                          :keys ,keys)))))))
+
+(defun general--repeat-abort-p (repeat-prop)
+  "Return t if repeat recording should be aborted based on REPEAT-PROP."
+  (or (memq repeat-prop (list nil 'abort 'ignore))
+      (and (eq repeat-prop 'motion)
+           (not (memq evil-state '(insert replace))))))
+
+(defun general--simulate-repeat (flag)
+  "Modified version of `evil-repeat-keystrokes'.
+It ensures that no simulated keys are recorded. Only the keys used to invoke the
+general-simulate-... command are recorded. This function also ensures that the
+repeat is aborted when it should be."
+  (when (eq flag 'post)
+    ;; remove simulated keys
+    (setq evil-repeat-info (butlast evil-repeat-info))
+    (let* ((command (cl-getf general--last-simulate :command))
+           (repeat-prop (evil-get-command-property command :repeat t))
+           (record-keys (cl-getf general--last-simulate :invoked-keys)))
+      (if (and command
+               (general--repeat-abort-p repeat-prop))
+          (evil-repeat-abort)
+        (evil-repeat-record record-keys)
+        (evil-clear-command-keys)))))
 
 (defvar general--last-dispatch nil)
 
-(defun general--fix-repeat (flag)
-  "Modified version of `evil-repeat-keystrokes'.
-It will remove extra keys added in a general-dispatch-... command."
-  (eval-after-load 'evil
-    `(cond ((eq ',flag 'pre)
-            (when evil-this-register
-              (evil-repeat-record
-               `(set evil-this-register ,evil-this-register)))
-            (setq evil-repeat-keys (this-command-keys)))
-           ((eq ',flag 'post)
-            (evil-repeat-record (if (zerop (length (this-command-keys)))
-                                    evil-repeat-keys
-                                  (this-command-keys)))
-            (evil-clear-command-keys)
-            (let* ((command (cl-getf general--last-dispatch :command))
-                   (repeat-prop (evil-get-command-property command :repeat t))
-                   (fallback (cl-getf general--last-dispatch :fallback))
-                   (invoked-keys (cl-getf general--last-dispatch :invoked-keys))
-                   (keys (cl-getf general--last-dispatch :keys)))
-              (if (or (memq repeat-prop (list nil 'abort 'ignore))
-                      (and (eq repeat-prop 'motion)
-                           (not (memq evil-state '(insert replace)))))
-                  (evil-repeat-abort)
-                (if fallback
-                    ;; may not know full key sequence
-                    (setcar evil-repeat-info invoked-keys)
-                  (setq evil-repeat-info
-                        (list (concat invoked-keys keys))))))))))
-
 ;;;###autoload
 (cl-defmacro general-key-dispatch
-    (fallback-command &rest maps &key name docstring &allow-other-keys)
+    (fallback-command &rest maps
+                      &key timeout inherit-keymap name docstring
+                      which-key
+                      &allow-other-keys)
   "Create a function that will run FALLBACK-COMMAND or a command from MAPS.
 MAPS consists of <key> <command> pairs. If a key in MAPS is matched, the
-corresponding command will be run. Otherwise FALLBACK-COMMAND will be run
-with the unmatched keys. So, for example, if \"ab\" was pressed, and \"ab\" is
-not one of the key sequences from MAPS, the FALLBACK-COMMAND will be run
-followed by the simulated keypresses of \"ab\". Prefix arguments will still work
-regardless of which command is run. This is useful for binding under non-prefix
-keys. For example, this can be used to redefine a sequence like \"cw\" or
-\"cow\" in evil but still have \"c\" work as `evil-change'. LAMBDA, NAME, and
-DOCSTRING are optional keyword arguments. They can be used to replace the
-automatically generated name and docstring for the created function and are
+corresponding command will be run. Otherwise FALLBACK-COMMAND will be run with
+the unmatched keys. So, for example, if \"ab\" was pressed, and \"ab\" is not
+one of the key sequences from MAPS, the FALLBACK-COMMAND will be run followed by
+the simulated keypresses of \"ab\". Prefix arguments will still work regardless
+of which command is run. This is useful for binding under non-prefix keys. For
+example, this can be used to redefine a sequence like \"cw\" or \"cow\" in evil
+but still have \"c\" work as `evil-change'. If TIMEOUT is specified,
+FALLBACK-COMMAND will also be run in the case that the user does not press the
+next key within the TIMEOUT (e.g. 0.5).
+
+NAME and DOCSTRING are optional keyword arguments. They can be used to replace
+the automatically generated name and docstring for the created function and are
 potentially useful if you want to create multiple, different commands using the
-same FALLBACK-COMMAND (e.g. `self-insert-command')."
+same FALLBACK-COMMAND (e.g. `self-insert-command').
+
+When INHERIT-KEYMAP is specified, all the keybindings from that keymap will be
+inherited in MAPS.
+
+WHICH-KEY can also be specified, in which case the description WHICH-KEY will
+replace the command name in the which-key popup. Note that this requires a
+version of which-key from after 2016-11-21."
   (declare (indent 1))
   (let ((name (or name (intern (format "general-dispatch-%s"
                                        (eval fallback-command)))))
@@ -740,28 +776,46 @@ same FALLBACK-COMMAND (e.g. `self-insert-command')."
                        collect key
                        and collect value)))
     `(progn
-       (when (fboundp 'evil-set-command-property)
-         (evil-set-command-property #',name :repeat 'general--fix-repeat))
-       (defun ,name (char)
-         ,(or docstring (format "Run %s or something else based on CHAR."
+       (eval-after-load 'evil
+         '(evil-set-command-property #',name :repeat 'general--dispatch-repeat))
+       (when ,which-key
+         (eval-after-load 'which-key
+           (lambda ()
+             (when (boundp 'which-key-replacement-alist)
+               (push '((nil . ,(symbol-name name))
+                       nil . ,which-key)
+                     which-key-replacement-alist)))))
+       ;; TODO list all of the bound keys in the docstring
+       (defun ,name ()
+         ,(or docstring (format (concat "Run %s or something else based"
+                                        "on the next keypresses.")
                                 (eval fallback-command)))
-         ;; TODO maybe don't read in a char initially; rename char
-         (interactive "c")
-         (setq char (char-to-string char))
+         (interactive)
          (let ((map (make-sparse-keymap))
-               ;; remove read in char
-               (invoked-keys (substring (this-command-keys) 0 -1))
+               (invoked-keys (this-command-keys))
+               (timeout ,timeout)
+               (inherit-keymap ,inherit-keymap)
                matched-command
-               fallback)
+               fallback
+               char
+               timed-out-p)
+           (when inherit-keymap
+             (set-keymap-parent map inherit-keymap))
            (if general-implicit-kbd
                (general--emacs-define-key map
                  ,@(general--apply-prefix-and-kbd nil maps))
              (general--emacs-define-key map ,@maps))
-           (while (keymapp (lookup-key map char))
-             (setq char (concat char (char-to-string (read-char)))))
+           (while (progn
+                    (if timeout
+                        (with-timeout (timeout (setq timed-out-p t))
+                          (setq char (concat char (char-to-string (read-char)))))
+                      (setq char (concat char (char-to-string (read-char)))))
+                    (and (not timed-out-p)
+                         (keymapp (lookup-key map char)))))
            (setq prefix-arg current-prefix-arg)
            (cond
-            ((setq matched-command (lookup-key map char))
+            ((and (not timed-out-p)
+                  (setq matched-command (lookup-key map char)))
              ;; necessary for evil-this-operator checks because
              ;; evil-define-operator sets evil-this-operator to this-command
              (let ((this-command matched-command))
@@ -773,11 +827,93 @@ same FALLBACK-COMMAND (e.g. `self-insert-command')."
              (setq unread-command-events (listify-key-sequence char))
              (let ((this-command ,fallback-command))
                (call-interactively ,fallback-command))))
-           (setq general--last-dispatch
-                 `(:command ,matched-command
-                            :invoked-keys ,invoked-keys
-                            :keys ,char
-                            :fallback ,fallback)))))))
+           (setq general--last-dispatch `(:command ,matched-command
+                                          :invoked-keys ,invoked-keys
+                                          :keys ,char
+                                          :fallback ,fallback)))))))
+
+(defvar general--repeat-info nil
+  "Used for debugging repeat behavior for `general-key-dispatch'.")
+
+(defun general--dispatch-repeat (flag)
+  "Modified version of `evil-repeat-keystrokes'.
+It will remove extra keys that would be added in a general-dispatch-... command
+with the default `evil-repeat-keystrokes' and ensures that the repeat is
+aborted when it should be."
+  (cond
+   ((eq flag 'pre)
+    (when evil-this-register
+      (evil-repeat-record
+       `(set evil-this-register ,evil-this-register))))
+   ((eq flag 'post)
+    (let* ((command (cl-getf general--last-dispatch :command))
+           (repeat-prop (evil-get-command-property command :repeat t))
+           (fallback (cl-getf general--last-dispatch :fallback))
+           (invoked-keys (cl-getf general--last-dispatch :invoked-keys))
+           (keys (cl-getf general--last-dispatch :keys))
+           (old-repeat-info (cl-copy-list evil-repeat-info))
+           (reversed-repeat-info (reverse evil-repeat-info))
+           count
+           next-repeat-item)
+      (while (and (stringp (setq next-repeat-item (car reversed-repeat-info)))
+                  (string-match "^[0-9]+$" next-repeat-item))
+        ;; need to rely on evil-repeat-info to get counts
+        ;; evil counts will appear as last items, e.g. ("c3" "3" "3")
+        ;; this will work even if the user binds digits in the dispatch command
+        ;; as long as the key to invoke the dispatch command is not also a digit
+        ;; (the 3 in "c3" is the only duplicate)
+        (push (pop reversed-repeat-info) count))
+      (setq evil-repeat-info (if (= (length count) 0)
+                                 (butlast evil-repeat-info)
+                               (nreverse (cdr reversed-repeat-info))))
+      ;; for debugging purposes only
+      (setq general--repeat-info
+            (list :invoked-keys invoked-keys :keys keys
+                  :this-command-keys (this-command-keys)
+                  :old-evil-repeat-info old-repeat-info
+                  :evil-repeat-info (cl-copy-list evil-repeat-info)
+                  :count count))
+      (if (general--repeat-abort-p repeat-prop)
+          (evil-repeat-abort)
+        (evil-repeat-record
+         (cond
+          (fallback
+           (concat invoked-keys (apply #'concat count) (this-command-keys)))
+          (t
+           (concat invoked-keys
+                   keys
+                   (unless (or (string= (concat invoked-keys keys)
+                                        (this-command-keys))
+                               (eq (evil-get-command-property command :repeat)
+                                   'general--simulate-repeat))
+                     ;; (this-command-keys) will contain the text object if the
+                     ;; matched command is an operator
+                     (concat count (this-command-keys)))))))
+        (evil-clear-command-keys))))))
+
+(cl-defmacro general-predicate-dispatch
+    (fallback-def &rest defs
+                  &key docstring
+                  &allow-other-keys)
+  (declare (indent 1))
+  "Create a menu item that will run FALLBACK-DEF or a definition from DEFS.
+DEFS consists of <predicate> <definition> pairs. Binding this menu-item to a key
+will cause that key to act as the corresponding definition (a command, keymap,
+etc) for the first matched predicate. If no predicate is matched FALLBACK-DEF
+will be run. When FALLBACK-DEF is nil and no predicates are matched, the keymap
+with the next highest precedence for the pressed key will be checked. DOCSTRING
+can be specified as a description for the menu item."
+  ;; remove keyword arguments from defs
+  (let ((defs (cl-loop for (key value) on defs by 'cddr
+                       unless (keywordp key)
+                       collect (list key value))))
+    `'(menu-item
+       ,(or docstring "") nil
+       :filter (lambda (&optional _)
+                 (cond ,@(mapcar (lambda (pred-def)
+                                   `(,(car pred-def) ,(cadr pred-def)))
+                                 defs)
+                       (t ,fallback-def))))))
 
 ;;; Optional Setup
 ;;;###autoload
@@ -914,6 +1050,9 @@ aliases such as `nmap' for `general-nmap'."
                                    (or (symbolp def)
                                        (when (and (symbolp (car def))
                                                   (not (keywordp (car def)))
+                                                  (not (memq
+                                                        (car def)
+                                                        '(menu-item lambda)))
                                                   (not (keymapp def)))
                                          (setq def (car def)))
                                        (setq def (cl-getf def :command)))))
@@ -932,6 +1071,17 @@ aliases such as `nmap' for `general-nmap'."
                                    `(general-define-key ,@arglist
                                                         :package ',name))))
                              arglists))))))))
+
+;;; Key-chord "Integration"
+(defun general-chord (keys)
+  "Rewrite the string KEYS into a valid key-chord vector."
+  ;; taken straight from key-chord.el
+  (if (/= 2 (length keys))
+      (error "Key-chord keys must have two elements"))
+  ;; Exotic chars in a string are >255 but define-key wants 128..255 for those
+  (let ((key1 (logand 255 (aref keys 0)))
+        (key2 (logand 255 (aref keys 1))))
+    (vector 'key-chord key1 key2)))
 
 (provide 'general)
 ;;; general.el ends here

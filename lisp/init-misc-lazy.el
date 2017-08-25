@@ -172,10 +172,7 @@ grab matched string, cssize them, and insert into kill ring"
 (defun display-line-number ()
   "display current line number in mini-buffer"
   (interactive)
-  (let (l)
-    (setq l (line-number-at-pos))
-    (message "line number:%d" l)
-    ))
+  (message "line number:%d" (line-number-at-pos)))
 
 (eval-after-load 'grep
   '(progn
@@ -229,7 +226,7 @@ grab matched string, cssize them, and insert into kill ring"
   "Make sure the full path of file exist in clipboard. This command will convert
 The full path into relative path insert it as a local file link in org-mode"
   (interactive)
-  (insert (format "[[file:%s]]" (file-relative-name (simpleclip-get-contents)))))
+  (insert (format "[[file:%s]]" (file-relative-name (my-gclip)))))
 
 (defun font-file-to-base64 (file)
   (let ((str "")
@@ -284,8 +281,7 @@ The full path into relative path insert it as a local file link in org-mode"
   (let ((rlt (format "%S" (get-text-property (point) 'face))))
     (kill-new rlt)
     (copy-yank-str rlt)
-    (message "%s => clipboard & yank ring" rlt)
-    ))
+    (message "%s => clipboard & yank ring" rlt)))
 
 (defun current-thing-at-point ()
   (interactive)
@@ -469,10 +465,14 @@ Including indent-buffer, which should not be called automatically on save."
  (when (file-writable-p (file-truename "~/.emacs.d/history"))
    (setq history-length 8000)
    (setq savehist-additional-variables '(search-ring regexp-search-ring kill-ring))
-   (savehist-mode 1))
- (message "Failed to access ~/.emacs.d/history"))
+   (savehist-mode 1)))
 ;; }}
 
+;; {{emms
+(require 'emms-setup)
+(emms-all)
+(emms-default-players)
+;; }}
 (provide 'init-misc-lazy)
 ;;; init-misc-lazy.el ends here
 

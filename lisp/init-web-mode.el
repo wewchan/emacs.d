@@ -4,6 +4,7 @@
 (add-to-list 'auto-mode-alist '("\\.page\\'" . web-mode)) ; salesforce
 (add-to-list 'auto-mode-alist '("\\.component\\'" . web-mode)) ; salesforce
 (add-to-list 'auto-mode-alist '("\\.wp\\'" . web-mode))
+(add-to-list 'auto-mode-alist '("\\.vue\\'" . web-mode))
 (add-to-list 'auto-mode-alist '("\\.tmpl\\'" . web-mode))
 (add-to-list 'auto-mode-alist '("\\.php\\'" . web-mode))
 (add-to-list 'auto-mode-alist '("\\.module\\'" . web-mode))
@@ -20,8 +21,7 @@
 (add-to-list 'auto-mode-alist '("\\.xul?\\'" . web-mode))
 (add-to-list 'auto-mode-alist '("\\.eex?\\'" . web-mode))
 (add-to-list 'auto-mode-alist '("\\.xml?\\'" . web-mode))
-(add-to-list 'auto-mode-alist '("\\.rhtml\\(\\.erb\\)?\\'" . web-mode)) ; ruby
-(add-to-list 'auto-mode-alist '("\\.jst\\.ejs\\'"  . web-mode)) ; ruby
+(add-to-list 'auto-mode-alist '("\\.\\(jst\\|ejs\\|rhtml\\)\\(\\.erb\\)?\\'"  . web-mode)) ; ruby
 
 (defun flymake-html-init ()
        (let* ((temp-file (flymake-init-create-temp-buffer-copy

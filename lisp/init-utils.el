@@ -10,6 +10,20 @@
          retval)
      ,@clean-up))
 
+;; {{ copied from http://ergoemacs.org/emacs/elisp_read_file_content.html
+(defun get-string-from-file (filePath)
+  "Return filePath's file content."
+  (with-temp-buffer
+    (insert-file-contents filePath)
+    (buffer-string)))
+
+(defun read-lines (filePath)
+  "Return a list of lines of a file at filePath."
+  (with-temp-buffer
+    (insert-file-contents filePath)
+    (split-string (buffer-string) "\n" t)))
+;; }}
+
 ;; Handier way to add modes to auto-mode-alist
 (defun add-auto-mode (mode &rest patterns)
   "Add entries to `auto-mode-alist' to use `MODE' for all given file `PATTERNS'."
@@ -39,7 +53,40 @@
   "Return the directory in which the `LIBRARY-NAME' load file is found."
   (file-name-as-directory (file-name-directory (find-library-name library-name))))
 
+(defmacro my-select-from-kill-ring (fn &optional n)
+  "Use `browse-kill-ring' if it exists and N is 1.
+If N > 1, assume just yank the Nth item in `kill-ring'.
+If N is nil, use `ivy-mode' to browse the `kill-ring'."
+  (interactive "P")
+  `(cond
+    ((or (not ,n) (and (= ,n 1) (not (fboundp 'browse-kill-ring))))
+     ;; remove duplicates in `kill-ring'
+     (let* ((candidates (cl-remove-if
+                         (lambda (s)
+                           (or (< (length s) 5)
+                               (string-match "\\`[\n[:blank:]]+\\'" s)))
+                         (delete-dups kill-ring))))
+       (let* ((ivy-height (/ (frame-height) 2)))
+         (ivy-read "Browse `kill-ring':"
+                   (mapcar
+                    (lambda (s)
+                      (let* ((w (frame-width))
+                             ;; display kill ring item in one line
+                             (key (replace-regexp-in-string "[ \t]*[\n\r]+[ \t]*" "\\\\n" s)))
+                        ;; strip the whitespace
+                        (setq key (replace-regexp-in-string "^[ \t]+" "" key))
+                        ;; fit to the minibuffer width
+                        (if (> (length key) w)
+                            (setq key (concat (substring key 0 (- w 4)) "...")))
+                        (cons key s)))
+                    candidates)
+                   :action #',fn))))
+    ((= ,n 1)
+     (browse-kill-ring))))
+
 (defun my-insert-str (str)
+  ;; ivy8 or ivy9
+  (if (consp str) (setq str (cdr str)))
   ;; evil-mode?
   (if (and (functionp 'evil-normal-state-p)
            (boundp 'evil-move-cursor-back)
@@ -150,7 +197,7 @@
     rlt))
 
 (defun my-guess-mplayer-path ()
-  (let ((rlt "mplayer"))
+  (let* ((rlt "mplayer"))
     (cond
      (*is-a-mac* (setq rlt "mplayer -quiet"))
      (*linux* (setq rlt "mplayer -quiet -stop-xscreensaver"))
@@ -179,9 +226,66 @@
             (format "rundll32.exe %SystemRoot%\\\\System32\\\\\shimgvw.dll, ImageView_Fullscreen %s &" file))))
     rlt))
 
+;; {{ simpleclip has problem on Emacs 25.1
+(defun test-simpleclip ()
+  (unwind-protect
+      (let (retval)
+        (condition-case ex
+            (progn
+              (simpleclip-set-contents "testsimpleclip!")
+              (setq retval
+                    (string= "testsimpleclip!"
+                             (simpleclip-get-contents))))
+          ('error
+           (message (format "Please install %s to support clipboard from terminal."
+                            (cond
+                             (*unix*
+                              "xsel or xclip")
+                             ((or *cygwin* *wind64*)
+                              "cygutils-extra from Cygwin")
+                             (t
+                              "CLI clipboard tools"))))
+           (setq retval nil)))
+        retval)))
+
+(setq simpleclip-works (test-simpleclip) )
+
+(defun my-gclip ()
+  (if simpleclip-works (simpleclip-get-contents)
+    (cond
+     ((eq system-type 'darwin)
+      (with-output-to-string
+        (with-current-buffer standard-output
+          (call-process "/usr/bin/pbpaste" nil t nil "-Prefer" "txt"))))
+     ((eq system-type 'cygwin)
+      (with-output-to-string
+        (with-current-buffer standard-output
+          (call-process "getclip" nil t nil))))
+     ((memq system-type '(gnu gnu/linux gnu/kfreebsd))
+      (with-output-to-string
+        (with-current-buffer standard-output
+          (call-process "xsel" nil t nil "--clipboard" "--output")))))))
+
+(defun my-pclip (str-val)
+  (if simpleclip-works (simpleclip-set-contents str-val)
+    (cond
+     ((eq system-type 'darwin)
+      (with-temp-buffer
+        (insert str-val)
+        (call-process-region (point-min) (point-max) "/usr/bin/pbcopy")))
+     ((eq system-type 'cygwin)
+      (with-temp-buffer
+        (insert str-val)
+        (call-process-region (point-min) (point-max) "putclip")))
+     ((memq system-type '(gnu gnu/linux gnu/kfreebsd))
+      (with-temp-buffer
+        (insert str-val)
+        (call-process-region (point-min) (point-max) "xsel" nil nil nil "--clipboard" "--input"))))))
+;; }}
+
 (defun make-concated-string-from-clipboard (concat-char)
-  (let (rlt (str (replace-regexp-in-string "'" "" (upcase (simpleclip-get-contents)))))
-    (setq rlt (replace-regexp-in-string "[ ,-:]+" concat-char str))
+  (let* ((str (replace-regexp-in-string "'" "" (upcase (my-gclip))))
+         (rlt (replace-regexp-in-string "[ ,-:]+" concat-char str)))
     rlt))
 
 ;; {{ diff region SDK
@@ -196,9 +300,10 @@
       (set-buffer rlt-buf)
       (erase-buffer)
       (insert ,content)
-      (diff-mode)
+      ;; `ffip-diff-mode' is more powerful than `diff-mode'
+      (ffip-diff-mode)
       (goto-char (point-min))
-      ;; evil keybinding
+      ;; Evil keybinding
       (if (fboundp 'evil-local-set-key)
           (evil-local-set-key 'normal "q"
                               (lambda ()

@@ -29,6 +29,9 @@
                    (*linux* nil)
                    (t nil)))
 
+(setq *emacs24old*  (or (and (= emacs-major-version 24) (= emacs-minor-version 3))
+                        (not *emacs24*)))
+
 ;; *Message* buffer should be writable in 24.4+
 (defadvice switch-to-buffer (after switch-to-buffer-after-hack activate)
   (if (string= "*Messages*" (buffer-name))
@@ -43,44 +46,40 @@
 (let ((file-name-handler-alist nil))
   (require 'init-autoload)
   (require 'init-modeline)
-  (require 'cl-lib)
+  ;; (require 'cl-lib) ; it's built in since Emacs v24.3
   (require 'init-compat)
-  (require 'init-utils)
   (require 'init-site-lisp) ;; Must come before elpa, as it may provide package.el
+  (require 'init-utils)
 
-;;  Windows configuration, assuming that cygwin is installed at "c:/cygwin"
-  (condition-case nil
-      (when *win64*
-        ;; (setq cygwin-mount-cygwin-bin-directory "c:/cygwin/bin")
-        (setq cygwin-mount-cygwin-bin-directory "c:/cygwin64/bin")
-        (require 'setup-cygwin)
-        ;; better to set HOME env in GUI
-        ;; (setenv "HOME" "c:/cygwin/home/someuser")
-        )
-    (error
-     (message "setup-cygwin failed, continue anyway")
-     ))
-  
+  ;; Windows configuration, assuming that cygwin is installed at "c:/cygwin"
+  ;; (condition-case nil
+  ;;     (when *win64*
+  ;;       ;; (setq cygwin-mount-cygwin-bin-directory "c:/cygwin/bin")
+  ;;       (setq cygwin-mount-cygwin-bin-directory "c:/cygwin64/bin")
+  ;;       (require 'setup-cygwin)
+  ;;       ;; better to set HOME env in GUI
+  ;;       ;; (setenv "HOME" "c:/cygwin/home/someuser")
+  ;;       )
+  ;;   (error
+  ;;    (message "setup-cygwin failed, continue anyway")
+  ;;    ))
+
   (require 'idle-require)
   (require 'init-elpa)
   (require 'init-exec-path) ;; Set up $PATH
-  (require 'init-frame-hooks)
   ;; any file use flyspell should be initialized after init-spelling.el
   ;; actually, I don't know which major-mode use flyspell.
   (require 'init-spelling)
-  (require 'init-xterm)
   (require 'init-gui-frames)
   (require 'init-ido)
   (require 'init-dired)
   (require 'init-uniquify)
   (require 'init-ibuffer)
-  (require 'init-flymake)
   (require 'init-ivy)
   (require 'init-hippie-expand)
   (require 'init-windows)
   (require 'init-sessions)
   (require 'init-git)
-  (require 'init-crontab)
   (require 'init-markdown)
   (require 'init-erlang)
   (require 'init-javascript)
@@ -100,7 +99,6 @@
   (require 'init-elisp)
   (require 'init-yasnippet)
   ;; Use bookmark instead
-  (require 'init-zencoding-mode)
   (require 'init-cc-mode)
   (require 'init-gud)
   (require 'init-linum-mode)
@@ -140,13 +138,13 @@
 
   ;; {{ idle require other stuff
   (setq idle-require-idle-delay 2)
-  (setq idle-require-symbols '(init-misc-lazy
+  (setq idle-require-symbols '(init-perforce
+                               init-misc-lazy
                                init-which-func
                                init-fonts
                                init-hs-minor-mode
                                init-writting
                                init-pomodoro
-                               init-emacspeak
                                init-artbollocks-mode
                                init-semantic))
   (idle-require-mode 1) ;; starts loading
@@ -158,8 +156,7 @@
 
   ;; my personal setup, other major-mode specific setup need it.
   ;; It's dependent on init-site-lisp.el
-  (if (file-exists-p "~/.custom.el") (load-file "~/.custom.el"))
-  )
+  (if (file-exists-p "~/.custom.el") (load-file "~/.custom.el")))
 
 ;; @see https://www.reddit.com/r/emacs/comments/4q4ixw/how_to_forbid_emacs_to_touch_configuration_files/
 (setq custom-file (concat user-emacs-directory "custom-set-variables.el"))

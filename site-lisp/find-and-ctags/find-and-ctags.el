@@ -1,11 +1,11 @@
 ;;; find-and-ctags.el --- Use ctags&find to create TAGS on Winows/Linux/OSX
 
-;; Copyright (C) 2014 Chen Bin
+;; Copyright (C) 2014-2017 Chen Bin
 
 ;; Author: Chen Bin <chenbin.sh@gmail.com>
 ;; URL: http://github.com/redguardtoo/find-and-ctags
 ;; Keywords: find ctags
-;; Version: 0.0.6
+;; Version: 0.0.8
 
 ;; This file is not part of GNU Emacs.
 
@@ -16,39 +16,25 @@
 ;; Insert below setup into ~/.emacs.d/init.el:
 ;; (defun my-setup-develop-environment ()
 ;;   (interactive)
-;;   (let (proj-dir
-;;         find-opts
-;;         ctags-opts)
-
-;;     ;; for COOL MYPROJ
-;;     ;; you can use find-and-ctags-current-full-filename-match-pattern-p instead
-;;     (when (find-and-ctags-current-path-match-pattern-p "MYPROJ.*/app")
-;;       (setq proj-dir (if find-and-ctags-windows-p "c:/Workspaces/MYPROJ/MACWeb/WebContent/app"
-;;                        "~/projs/MYPROJ/MACWeb/WebContent/app"))
-;;       ;; ignore file bigger than 64K, ignore files in "dist/"
-;;       (setq find-opts "-not -size +64k -not -iwholename '*/dist/*'")
-;;       (setq ctags-opts "--exclude='*.min.js' --exclude='*.git*'")
-;;       ;; you can use setq-local instead
-;;       (setq tags-table-list
-;;             (list (find-and-ctags-run-ctags-if-needed proj-dir '((find-opts ctags-opts)
-;;                                                                  ("dist/test.js" "-a"))))))
-;;     ;; for other projects
-;;     ;; insert more `when' statements here
-;;     ))
+;;   ;; you can use `find-and-ctags-current-full-filename-match-pattern-p' instead
+;;   (if (find-and-ctags-current-path-match-pattern-p "/MYPROJ")
+;;     (vist-tags-table (find-and-ctags-run-ctags-if-needed "~/workspace/MYPROJ" ; project directory
+;;                                                          '(("-not -size +64k" "--exclude=*.min.js") ; (find-opts ctags-opts)
+;;                                                            ;; you may add more find-opts ctags-opts pair HERE to run find&ctags again to APPEND to same TAGS file
+;;                                                            ;; ctags-opts must contain "-a" to append
+;;                                                            ;; (find-opts "-a")
+;;                                                            ))
+;;                      t)))
+;; (add-hook 'prog-mode-hook 'my-setup-develop-environment) ; prog-mode require emacs24+
+;; (add-hook 'lua-mode-hook 'my-setup-develop-environment) ; lua-mode does NOT inherit from prog-mode
+;; ;; OPTIONAL
+;; (add-hook 'after-save-hook 'find-and-ctags-auto-update-tags)
 ;;
-;;   ;; OPTIONAL
-;;   (add-hook 'after-save-hook 'find-and-ctags-auto-update-tags)
-;;   (add-hook 'prog-mode-hook 'my-setup-develop-environment)
-;;   (add-hook 'org-mode-hook 'my-setup-develop-environment)
+;; In above setup, TAGS is updated *automatically* every 5 minutes.
+;; It can also be manually update by `find-and-ctags-update-all-tags-force'.
 ;;
-;; In above setup, TAGS will be updated *automatically* every 5 minutes.
-;; But you can manually update TAGS by `M-x find-and-ctags-update-all-tags-force'.
-;; If you want to manually update the TAGS, `M-x find-and-ctags-update-all-tags-force'.
-;;
-;; After `'tags-table-list' is set, You can `M-x find-tag' to start code navigation
-;;
-;; You can use `(find-and-ctags-get-hostname)' for per computer setup.
-;; For example, if my home PC hostname is like `AU0247589',
+;; You can use `find-and-ctags-get-hostname' for per computer setup.
+;; For example, if my home PC hostname is like "AU0247589",
 ;; Here is sample code how I specify my C++ setup for home ONLY:
 ;;
 ;;   (if (string-match "^AU.*" (find-and-ctags-get-hostname))
@@ -157,27 +143,62 @@ If FORCE is t, the commmand is executed without consulting the timer."
             (shell-command cmd))))
     file))
 
+;;;#autoload
+(defun find-and-ctags-generate-tags (src-dir &optional opts-matrix force)
+  "Ask ctags to create TAGS and return the directory of TAGS.
+SRC-DIR is the `default-directory' to run the command.
+Each row of OPTS-MATRIX contains two items.
+The first item is the command line options pass to `find'.
+The second is the command line options pass `ctags'.
+If FORCE is t, the commmand is executed without consulting the timer.
+
+In summary, it's same as `find-and-ctags-run-ctags-if-needed' but return the directory of TAGS."
+  (file-name-directory (find-and-ctags-run-ctags-if-needed)) )
+
+(defun find-and-ctags-buffer-dir ()
+  "Find a directory for current buffer.
+Could be parent of `buffer-file-name' or `default-directory' or anything.
+Make sure it's not nil."
+  (or (if buffer-file-name (file-name-directory buffer-file-name))
+      ;; buffer is created in real time
+      default-directory
+      ""))
+
+;;;###autoload
+(defun find-and-ctags-buffer-path ()
+  "Find a path for current buffer.
+Could be `buffer-file-name' or `default-directory' or anything.
+Make sure it's not nil."
+  (or buffer-file-name
+      default-directory
+      ""))
+
 ;;;###autoload
 (defun find-and-ctags-current-path-match-pattern-p (regex)
-  "Is current directory match the REGEX?"
-  (let ((dir (if (buffer-file-name)
-                 (file-name-directory (buffer-file-name))
-               "")))
-    (string-match-p regex dir)))
+  "Is current directory match the REGEX?
+We use parent directory of `buffer-file-name'.
+If it's nil, fallback to `default-directory'."
+  (string-match-p regex (find-and-ctags-buffer-dir)))
 
 ;;;###autoload
 (defun find-and-ctags-current-full-filename-match-pattern-p (regex)
-  "Is current full file name (including directory) match the REGEX?"
-  (let ((dir (if (buffer-file-name) (buffer-file-name) "")))
-    (string-match-p regex dir)))
+  "Is buffer match the REGEX?
+We use `buffer-file-name' at first.
+If it's nil, fallback to `default-directory'."
+  (string-match-p regex (find-and-ctags-buffer-path)))
 
 ;;;###autoload
 (defun find-and-ctags-update-all-tags-force (&optional is-used-as-api)
   "Update all TAGS files listed in `tags-table-list'.
 If IS-USED-AS-API is true, friendly message is suppressed"
   (interactive)
-  (let (opts-matrix)
-    (dolist (tag tags-table-list)
+  (let* (opts-matrix
+         (tags-list tags-table-list))
+    (if tags-file-name
+        (setq tags-list (add-to-list 'tags-list tags-file-name)))
+    (dolist (tag tags-list)
+      (unless (string-match-p "TAGS$" tag)
+        (setq tag (concat (file-name-absolute-p tag) "TAGS")))
       (setq opts-matrix (gethash tag find-and-ctags-cli-opts-hash))
       (if opts-matrix
           (apply 'find-and-ctags-run-ctags-if-needed
@@ -187,7 +208,7 @@ If IS-USED-AS-API is true, friendly message is suppressed"
                  (list opts-matrix t))
         (find-and-ctags-run-ctags-if-needed (file-name-directory tag) '(("" "")) t))
       (unless is-used-as-api
-        (message "All tag files in `tags-table-list' are updated!")))))
+        (message "Tags in `tags-file-name' and `tags-table-list' are updated!")))))
 
 ;;;###autoload
 (defun find-and-ctags-auto-update-tags()

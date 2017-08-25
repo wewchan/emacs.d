@@ -34,6 +34,32 @@ if no files marked, always operate on current line in dired-mode
           ad-do-it)
     ad-do-it))
 
+(defadvice dired-guess-default (after dired-guess-default-after-hack activate)
+  (if (string-match-p "^mplayer -quiet" ad-return-value)
+      (let* ((dir (file-name-as-directory (concat default-directory
+                                                  "Subs")))
+             basename)
+        (cond
+         ((file-exists-p (concat dir "English.sub"))
+          (setq ad-return-value (concat ad-return-value
+                                        " -vobsub Subs/English")))
+         ((file-exists-p (concat dir "Chinese.sub"))
+          (setq ad-return-value (concat ad-return-value
+                                        " -vobsub Subs/Chinese")))
+         ((file-exists-p (concat dir (setq basename (file-name-base (car (dired-get-marked-files 'no-dir)))) ".sub"))
+          (setq ad-return-value (concat ad-return-value
+                                        " -vobsub Subs/" basename)))
+         ((file-exists-p (concat dir "English.srt"))
+          (setq ad-return-value (concat ad-return-value
+                                        " -sub Subs/English.srt")))
+         ((file-exists-p (concat dir "Chinese.srt"))
+          (setq ad-return-value (concat ad-return-value
+                                        " -sub Subs/Chinesesrt")))
+         ((file-exists-p (concat dir (setq basename (file-name-base (car (dired-get-marked-files 'no-dir)))) ".sub"))
+          (setq ad-return-value (concat ad-return-value
+                                        " -sub Subs/" basename ".srt"))))))
+  ad-return-value)
+
 ;; @see http://blog.twonegatives.com/post/19292622546/dired-dwim-target-is-j00-j00-magic
 ;; op open two new dired buffers side-by-side and give your new-found automagic power a whirl.
 ;; Now combine that with a nice window configuration stored in a register and you’ve got a pretty slick work flow.
@@ -41,6 +67,31 @@ if no files marked, always operate on current line in dired-mode
 
 (eval-after-load 'dired
   '(progn
+     ;; @see https://emacs.stackexchange.com/questions/5649/sort-file-names-numbered-in-dired/5650#5650
+     (setq dired-listing-switches "-laGh1v --group-directories-first")
+     ;; {{ @see https://oremacs.com/2017/03/18/dired-ediff/
+     ;; -*- lexical-binding: t -*-
+     (defun ora-ediff-files ()
+       (interactive)
+       (let ((files (dired-get-marked-files))
+             (wnd (current-window-configuration)))
+         (if (<= (length files) 2)
+             (let ((file1 (car files))
+                   (file2 (if (cdr files)
+                              (cadr files)
+                            (read-file-name
+                             "file: "
+                             (dired-dwim-target-directory)))))
+               (if (file-newer-than-file-p file1 file2)
+                   (ediff-files file2 file1)
+                 (ediff-files file1 file2))
+               (add-hook 'ediff-after-quit-hook-internal
+                         (lambda ()
+                           (setq ediff-after-quit-hook-internal nil)
+                           (set-window-configuration wnd))))
+           (error "no more than 2 files should be marked"))))
+     (define-key dired-mode-map "e" 'ora-ediff-files)
+     ;; }}
      ;; from 24.4, dired+ can show/hide dired details by press "("
      (define-key dired-mode-map "/" 'dired-isearch-filenames)
      (define-key dired-mode-map "\\" 'diredext-exec-git-command-in-shell)
@@ -48,17 +99,16 @@ if no files marked, always operate on current line in dired-mode
      (require 'dired+)
      (setq dired-recursive-deletes 'always)
      (dolist (file `(((if *unix* "zathura" "open") "pdf" "dvi" "pdf.gz" "ps" "eps")
-                     ("unrar x" "rar")
-                     ((if (not *is-a-mac*) (my-guess-mplayer-path) "open")  "avi" "mpg" "rmvb" "rm" "flv" "wmv" "mkv" "mp4" "m4v" "webm")
+                     ("7z x" "rar" "zip" "7z") ; "e" to extract, "x" to extract with full path
+                     ((if (not *is-a-mac*) (my-guess-mplayer-path) "open")  "ogm" "avi" "mpg" "rmvb" "rm" "flv" "wmv" "mkv" "mp4" "m4v" "webm" "part")
                      ((concat (my-guess-mplayer-path) " -playlist") "list" "pls")
                      ((if *unix* "feh" "open") "gif" "jpeg" "jpg" "tif" "png" )
-                     ("7z x" "7z")
+                     ((if *unix* "libreoffice" "open") "doc" "docx" "xls" "xlsx" "odt")
                      ("djview" "djvu")
-                     ("firefox" "xml" "xhtml" "html" "htm" "mht")))
-       (add-to-list 'dired-guess-shell-alist-default
+                     ("firefox" "xml" "xhtml" "html" "htm" "mht" "epub")))
+       (add-to-list 'dired-guess-shell-alist-user
                     (list (concat "\\." (regexp-opt (cdr file) t) "$")
-                          (car file))))
-     ))
+                          (car file))))))
 
 ;; {{ Write backup files to own directory
 ;; @see https://www.gnu.org/software/emacs/manual/html_node/tramp/Auto_002dsave-and-Backup.html
@@ -80,6 +130,7 @@ if no files marked, always operate on current line in dired-mode
 ;; @see https://github.com/joedicastro/dotfiles/tree/master/emacs
 (setq vc-make-backup-files nil)
 ;; }}
+
 
 ;; {{ tramp setup
 (add-to-list 'backup-directory-alist
