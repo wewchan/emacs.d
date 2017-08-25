@@ -20,5 +20,5 @@
 (add-hook 'go-mode-hook (lambda ()
                           (local-set-key (kbd  "M-.") 'godef-jump)))
 (add-hook 'go-mode-hook 'go-eldoc-setup)
-
+(add-hook 'go-mode-hook #'go-guru-hl-identifier-mode)
 (provide 'init-go-mode)
