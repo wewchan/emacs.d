@@ -181,6 +181,10 @@ If use-indirect-buffer is not nil, use `indirect-buffer' to hold the widen conte
   ;; org-mime setup, run this command in org-file, than yank in `message-mode'
   (local-set-key (kbd "C-c M-o") 'org-mime-org-buffer-htmlize)
 
+  (local-set-key (kbd "C-c l") 'org-store-link)
+  (local-set-key (kbd "C-c a") 'org-agenda)
+  (local-set-key (kbd "C-c b") 'org-iswitchb)
+  
   ;; don't spell check double words
   (setq flyspell-check-doublon nil)
 
