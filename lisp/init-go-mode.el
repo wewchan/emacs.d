@@ -1,6 +1,6 @@
 ;; Set GO environment variable, add below sentences to .profile
 ;; export GOROOT=/usr/local/go
-;; export GOPATH=$HOME/GOWS
+;; export GOPATH=$HOME/gows
 ;; export PATH=$PATH:$GOROOT/bin:$GOPATH/bin
 ;; 3rd party extensions
 ;; Auto completion
