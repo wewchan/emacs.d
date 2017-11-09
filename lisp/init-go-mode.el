@@ -41,6 +41,9 @@
     sourcegraph.com/sqs/goreturns \
     github.com/cweill/gotests/... \
     golang.org/x/tools/cmd/guru \
+    github.com/kisielk/errcheck \
+    github.com/mdempsky/unconvert \
+    honnef.co/go/tools/cmd/megacheck \
     github.com/josharian/impl")
 ;;   (shell-command-to-string "go get -u github.com/nsf/gocode")
 ;;   (shell-command-to-string "go get -u github.com/rogpeppe/godef")
