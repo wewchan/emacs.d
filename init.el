@@ -140,6 +140,7 @@
   (require 'init-web-mode)
   (require 'init-slime)
   (require 'init-company)
+  (require 'init-flycheck)
   (require 'init-chinese) ;; cannot be idle-required
   ;; need statistics of keyfreq asap
   (require 'init-keyfreq)
