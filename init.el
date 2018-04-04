@@ -150,9 +150,10 @@
   (require-init 'init-babel)
   (require-init 'init-plantuml)
   (require-init 'init-ditaa)
-  ;;(require 'init-mobileorg)  ;; Disable mobileOrg, it's useless to me rightnow
-  (require 'init-go-mode)
-  ;;(require 'init-ox-confluence) 
+  ;;(require-init 'init-mobileorg)  ;; disable mobileOrg, it's useless to me rightnow
+  (require-init 'init-go-mode)
+  ;;(require-init 'init-ox-confluence) 
+  ;;(require-init 'init-flycheck)  ;;seems duplicated
   ;; end section
 
   (add-to-list 'load-path (expand-file-name "~/.emacs.d/lisp"))
