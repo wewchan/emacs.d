@@ -10,17 +10,17 @@ _r_andom     _t_erm             _E_nable/Disable
 _n_ext       _a_utoComplete     _V_intage/Modern
 _p_revious   _C_reate workgroup Open recent _f_ile
 _P_ause      _l_oad workgroup   Recent _d_irectory
-_O_pen       _b_ookmark         Last dired _c_ommand
+_O_pen       _B_ookmark         Last dired _c_ommand
 _L_ Playlist Goto book_m_ark    Dired comand _h_istory
-_S_huffle    Undo _v_isualize
+_S_huffle    Undo _v_isualize   _b_ack
 _q_uit
 "
   ("c" my-dired-redo-last-command)
   ("h" my-dired-redo-from-commands-history)
-  ("b" bookmark-set)
+  ("B" bookmark-set)
   ("m" counsel-bookmark-goto)
   ("f" my-counsel-recentf)
-  ("d" counsel-recent-dir)
+  ("d" counsel-recent-directory)
   ("C" wg-create-workgroup)
   ("l" my-wg-switch-workgroup)
   ("t" ansi-term)
@@ -33,6 +33,7 @@ _q_uit
   ("p" emms-previous)
   ("P" emms-pause)
   ("O" emms-play-playlist)
+  ("b" back-to-previous-buffer)
   ("L" emms-playlist-mode-go)
   ("S" (progn (emms-shuffle) (emms-random)))
   ("q" nil))
@@ -202,6 +203,43 @@ _w_ whitespace-mode:   %`whitespace-mode
 ;; }}
 
 ;; {{ @see https://github.com/abo-abo/hydra/wiki/Window-Management
+
+;; helpers from https://github.com/abo-abo/hydra/blob/master/hydra-examples.el
+(unless (featurep 'windmove)
+  (require 'windmove))
+
+(defun hydra-move-splitter-left (arg)
+  "Move window splitter left."
+  (interactive "p")
+  (if (let ((windmove-wrap-around))
+        (windmove-find-other-window 'right))
+      (shrink-window-horizontally arg)
+    (enlarge-window-horizontally arg)))
+
+(defun hydra-move-splitter-right (arg)
+  "Move window splitter right."
+  (interactive "p")
+  (if (let ((windmove-wrap-around))
+        (windmove-find-other-window 'right))
+      (enlarge-window-horizontally arg)
+    (shrink-window-horizontally arg)))
+
+(defun hydra-move-splitter-up (arg)
+  "Move window splitter up."
+  (interactive "p")
+  (if (let ((windmove-wrap-around))
+        (windmove-find-other-window 'up))
+      (enlarge-window arg)
+    (shrink-window arg)))
+
+(defun hydra-move-splitter-down (arg)
+  "Move window splitter down."
+  (interactive "p")
+  (if (let ((windmove-wrap-around))
+        (windmove-find-other-window 'up))
+      (shrink-window arg)
+    (enlarge-window arg)))
+
 (defhydra hydra-window ()
   "
 Movement^^   ^Split^         ^Switch^     ^Resize^
@@ -250,7 +288,7 @@ _SPC_ cancel _o_nly this     _d_elete
          (add-hook 'ace-window-end-once-hook
                    'hydra-window/body)))
   ("o" delete-other-windows)
-  ("i" ace-maximize-window)
+  ("i" ace-delete-other-windows)
   ("z" (progn
          (winner-undo)
          (setq this-command 'winner-undo)))
@@ -326,6 +364,62 @@ _q_ cancel
 (global-set-key (kbd "C-c C-s") 'hydra-search/body)
 ;; (global-set-key (kbd "C-c ; b") 'sdcv-search-pointer)
 ;; (global-set-key (kbd "C-c ; t") 'sdcv-search-input+)
+
+(defhydra hydra-describe (:color blue :hint nil)
+  "
+Describe Something: (q to quit)
+_a_ all help for everything screen
+_b_ bindings
+_B_ personal bindings
+_c_ char
+_C_ coding system
+_f_ function
+_F_ flycheck checker
+_i_ input method
+_k_ key briefly
+_K_ key
+_l_ language environment
+_L_ mode lineage
+_m_ major mode
+_M_ minor mode
+_n_ current coding system briefly
+_N_ current coding system full
+_o_ lighter indicator
+_O_ lighter symbol
+_p_ package
+_P_ text properties
+_s_ symbol
+_t_ theme
+_v_ variable
+_w_ where is something defined
+"
+  ("b" describe-bindings)
+  ("B" describe-personal-keybindings)
+  ("C" describe-categories)
+  ("c" describe-char)
+  ("C" describe-coding-system)
+  ("f" describe-function)
+  ("F" flycheck-describe-checker)
+  ("i" describe-input-method)
+  ("K" describe-key)
+  ("k" describe-key-briefly)
+  ("l" describe-language-environment)
+  ("L" help/parent-mode-display)
+  ("M" describe-minor-mode)
+  ("m" describe-mode)
+  ("N" describe-current-coding-system)
+  ("n" describe-current-coding-system-briefly)
+  ("o" describe-minor-mode-from-indicator)
+  ("O" describe-minor-mode-from-symbol)
+  ("p" describe-package)
+  ("P" describe-text-properties)
+  ("q" nil)
+  ("a" help)
+  ("s" describe-symbol)
+  ("t" describe-theme)
+  ("v" describe-variable)
+  ("w" where-is))
+(global-set-key (kbd "C-c C-q") 'hydra-describe/body)
 
 (provide 'init-hydra)
 ;;; init-hydra.el ends here
