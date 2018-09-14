@@ -6,7 +6,7 @@
    (perl . t)
    (ruby . t)
    (R . t)
-   (sh . t)
+   (shell . t)
    (gnuplot . t)
    (org . t)
    (latex . t)
