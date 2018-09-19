@@ -155,7 +155,8 @@
   ;;(require-init 'init-flycheck)  ;;seems duplicated
   (require-init 'init-vlf)
   ;;  (require 'init-use-package)
-  (require-init 'init-log4j-mode)
+  ;;(require-init 'init-log4j-mode)
+  (require-init 'init-logview)
   ;; end section
 
   (add-to-list 'load-path (expand-file-name "~/.emacs.d/lisp"))
