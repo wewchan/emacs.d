@@ -153,6 +153,9 @@
   (require-init 'init-go-mode)
   ;;(require-init 'init-ox-confluence) 
   ;;(require-init 'init-flycheck)  ;;seems duplicated
+  (require-init 'init-vlf)
+  ;;  (require 'init-use-package)
+  (require-init 'init-log4j-mode)
   ;; end section
 
   (add-to-list 'load-path (expand-file-name "~/.emacs.d/lisp"))
