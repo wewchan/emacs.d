@@ -111,6 +111,7 @@
 ;;  (require 'init-mobileorg)
   (require 'init-go-mode)
   (require 'init-vlf)
+;;  (require 'init-use-package)
   (require 'init-log4j-mode)
 ;;  (require 'init-ox-confluence)
   (require 'init-css)

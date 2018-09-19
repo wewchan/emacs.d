@@ -266,6 +266,7 @@
 (require-package 'flycheck)
 (require-package 'vlf)
 (require-package 'log4j-mode)
+(require-package 'use-package)
 (require-package 'ivy-hydra) ; @see https://oremacs.com/2015/07/23/ivy-multiaction/
 (require-package 'pyim)
 (require-package 'web-mode)
