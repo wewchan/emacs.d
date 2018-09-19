@@ -6,7 +6,6 @@
 (global-set-key (kbd "C-x 4 u") 'winner-undo)
 (global-set-key (kbd "C-x 4 U") 'winner-redo)
 
-(/ .61803398875 (- 1 .61803398875))
 
 (defvar my-ratio-dict
   '((1 . 1.61803398875)
@@ -113,5 +112,29 @@ Always focus on bigger window."
              (set-window-start w1 s2)
              (set-window-start w2 s1)
              (setq i (1+ i)))))))
+
+;; buffer related {{
+(defun kill-buffer-in-nth-window (&optional win-num)
+  "Kill the buffer in nth window, default to next window
+If WIN-NUM is provided (via prefix in C-u), kill the buffer in window numbered WIN-NUM
+
+Used for killing temporary/auto buffers like *help*, *manual* .etc, also useful
+in kill buffer in other window while keeping window split untouched."
+  (interactive "P")
+  (let ((tgt-win)
+        (cur-buf-name (buffer-name))
+        (cur-win (selected-window)))
+    (if win-num
+        (setq tgt-win (select-window-by-number win-num))
+      (setq tgt-win (next-window)))
+    (select-window tgt-win)
+    (if (eq cur-buf-name (buffer-name))
+        (message "Same buffer, do nothing")
+      (kill-this-buffer))
+    (select-window cur-win)))
+
+(global-set-key (kbd "C-x K") 'kill-buffer-in-nth-window)
+;; }}
+
 
 (provide 'init-windows)
