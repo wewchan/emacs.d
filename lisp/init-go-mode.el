@@ -34,7 +34,7 @@
     github.com/rogpeppe/godef \
     golang.org/x/tools/cmd/godoc \
     github.com/zmb3/gogetdoc \
-    github.com/golang/lint/golint \
+    golang.org/x/lint/golint \
     github.com/fatih/gomodifytags \
     github.com/uudashr/gopkgs/cmd/gopkgs \
     golang.org/x/tools/cmd/gorename \
@@ -43,7 +43,7 @@
     golang.org/x/tools/cmd/guru \
     github.com/kisielk/errcheck \
     github.com/mdempsky/unconvert \
-    honnef.co/go/tools/cmd/megacheck \
+    honnef.co/go/tools/cmd/staticcheck \
     github.com/josharian/impl")
 ;;   (shell-command-to-string "go get -u github.com/nsf/gocode")
 ;;   (shell-command-to-string "go get -u github.com/rogpeppe/godef")
